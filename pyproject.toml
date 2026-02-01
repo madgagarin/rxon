@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rxon"
+version = "1.0b1"
+description = "RXON (Reverse Axon) - Lightweight Inter-node Reverse Communication Protocol."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    {name = "Dmitrii Gagarin", email = "madgagarin@gmail.com"},
+]
+maintainers = [
+    {name = "Dmitrii Gagarin", email = "madgagarin@gmail.com"},
+]
+keywords = ["rxon", "hln", "protocol", "distributed-systems", "holarchy", "holon"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
+]
+dependencies = [
+    "aiohttp>=3.12",
+    "orjson>=3.10",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/madgagarin/rxon"
+"Repository" = "https://github.com/madgagarin/rxon"
+"Bug Tracker" = "https://github.com/madgagarin/rxon/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+rxon = ["py.typed"]
+
+[tool.ruff]
+src = ["src"]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "A", "SIM", "C4"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.0.0",
+]
