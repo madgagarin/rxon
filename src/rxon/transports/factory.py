@@ -10,9 +10,14 @@ def create_transport(
 ) -> Transport:
     """
     Factory function to create the appropriate Transport based on the URL scheme.
-    Currently supports: http://, https://
+    Currently supports: http://, https://, mock://
     """
     if url.startswith("http://") or url.startswith("https://"):
         return HttpTransport(base_url=url, worker_id=worker_id, token=token, ssl_context=ssl_context, **kwargs)
+
+    if url.startswith("mock://"):
+        from ..testing import MockTransport
+
+        return MockTransport(worker_id=worker_id, token=token)
 
     raise ValueError(f"Unsupported transport scheme in URL: {url}")

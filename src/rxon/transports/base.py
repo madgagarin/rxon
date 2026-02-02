@@ -39,6 +39,7 @@ class Transport(ABC):
         """
         Register the holon shell with the orchestrator.
         Returns True if successful.
+        Raises RxonError subclass on failure.
         """
         pass
 
@@ -46,6 +47,8 @@ class Transport(ABC):
     async def poll_task(self, timeout: float = 30.0) -> Optional[TaskPayload]:
         """
         Long-poll for the next available task.
+        Returns None if no task available (timeout/204).
+        Raises RxonError subclass on failure.
         """
         pass
 
@@ -54,6 +57,7 @@ class Transport(ABC):
         """
         Send task execution result back to orchestrator.
         Returns True if successful.
+        Raises RxonError subclass on failure (after retries).
         """
         pass
 
@@ -62,6 +66,7 @@ class Transport(ABC):
         """
         Update holon status and availability.
         Returns True if successful.
+        Raises RxonError subclass on failure.
         """
         pass
 

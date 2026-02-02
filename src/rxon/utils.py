@@ -1,7 +1,10 @@
 from typing import Any
 
+from orjson import dumps
+
 __all__ = [
     "to_dict",
+    "json_dumps",
 ]
 
 
@@ -17,3 +20,10 @@ def to_dict(obj: Any) -> Any:
     if isinstance(obj, dict):
         return {k: to_dict(v) for k, v in obj.items()}
     return obj
+
+
+def json_dumps(obj: Any) -> str:
+    """
+    Wrapper for orjson.dumps that returns str (required by aiohttp).
+    """
+    return dumps(obj).decode("utf-8")

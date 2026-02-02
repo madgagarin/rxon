@@ -1,30 +1,56 @@
+from typing import Any, Dict, Optional
+
 __all__ = [
-    "RXONProtocolError",
+    "RxonError",
+    "RxonNetworkError",
+    "RxonAuthError",
+    "RxonProtocolError",
     "S3ConfigMismatchError",
     "IntegrityError",
     "ParamValidationError",
 ]
 
 
-class RXONProtocolError(Exception):
-    """Base exception for all protocol-related errors."""
+class RxonError(Exception):
+    """Base exception for all RXON library errors."""
+
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.message = message
+        self.details = details or {}
+
+
+class RxonNetworkError(RxonError):
+    """Raised when a network operation fails (connection refused, timeout, etc.)."""
 
     pass
 
 
-class S3ConfigMismatchError(RXONProtocolError):
+class RxonAuthError(RxonError):
+    """Raised when authentication fails (401/403) and cannot be recovered."""
+
+    pass
+
+
+class RxonProtocolError(RxonError):
+    """Raised when the server response violates the protocol (unexpected status, bad JSON)."""
+
+    pass
+
+
+class S3ConfigMismatchError(RxonProtocolError):
     """Raised when Worker and Orchestrator S3 configurations do not match."""
 
     pass
 
 
-class IntegrityError(RXONProtocolError):
+class IntegrityError(RxonProtocolError):
     """Raised when file integrity check (size/hash) fails."""
 
     pass
 
 
-class ParamValidationError(RXONProtocolError):
+class ParamValidationError(RxonProtocolError):
     """Raised when task parameters fail validation."""
 
     pass

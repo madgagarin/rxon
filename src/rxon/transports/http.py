@@ -1,9 +1,9 @@
 from asyncio import sleep
 from logging import getLogger
 from ssl import SSLContext
-from typing import AsyncIterator, Optional
+from typing import Any, AsyncIterator, Dict, Optional, cast
 
-from aiohttp import ClientSession, ClientTimeout, TCPConnector, WSMsgType
+from aiohttp import ClientError, ClientSession, ClientTimeout, TCPConnector, WSMsgType
 
 from ..constants import (
     AUTH_HEADER_WORKER,
@@ -11,8 +11,16 @@ from ..constants import (
     ENDPOINT_TASK_RESULT,
     ENDPOINT_WORKER_HEARTBEAT,
     ENDPOINT_WORKER_REGISTER,
+    PROTOCOL_VERSION,
+    PROTOCOL_VERSION_HEADER,
     STS_TOKEN_ENDPOINT,
     WS_ENDPOINT,
+)
+from ..exceptions import (
+    RxonAuthError,
+    RxonError,
+    RxonNetworkError,
+    RxonProtocolError,
 )
 from ..models import (
     Heartbeat,
@@ -23,7 +31,7 @@ from ..models import (
     WorkerCommand,
     WorkerRegistration,
 )
-from ..utils import to_dict
+from ..utils import json_dumps, to_dict
 from .base import Transport
 
 logger = getLogger(__name__)
@@ -52,7 +60,10 @@ class HttpTransport(Transport):
         self.ssl_context = ssl_context
         self._session = session
         self._own_session = False
-        self._headers = {AUTH_HEADER_WORKER: self.token}
+        self._headers = {
+            AUTH_HEADER_WORKER: self.token,
+            PROTOCOL_VERSION_HEADER: PROTOCOL_VERSION,
+        }
         self.verify_ssl = verify_ssl
         self.result_retries = result_retries
         self.result_retry_delay = result_retry_delay
@@ -61,7 +72,7 @@ class HttpTransport(Transport):
     async def connect(self) -> None:
         if not self._session:
             connector = TCPConnector(ssl=self.ssl_context) if self.ssl_context else None
-            self._session = ClientSession(connector=connector)
+            self._session = ClientSession(connector=connector, json_serialize=json_dumps)
             self._own_session = True
 
     async def close(self) -> None:
@@ -70,22 +81,67 @@ class HttpTransport(Transport):
         if self._own_session and self._session and not self._session.closed:
             await self._session.close()
 
-    async def _handle_401(self, func, *args, **kwargs):
-        """Helper to retry a request once after refreshing the token on 401."""
+    async def _request(
+        self,
+        method: str,
+        endpoint: str,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        json: Optional[Any] = None,
+        timeout: Optional[ClientTimeout] = None,
+    ) -> Any:
+        """
+        Internal helper to execute HTTP requests with automatic 401 retry and error handling.
+        """
         if not self._session:
-            raise RuntimeError("Transport not connected. Call connect() first.")
+            raise RxonNetworkError("Transport not connected. Call connect() first.")
 
-        call_headers = kwargs.get("headers", {})
-        kwargs["headers"] = {**self._headers, **call_headers}
-        resp = await func(*args, **kwargs)
+        url = f"{self.base_url}{endpoint}"
+        headers = self._headers.copy()
+        attempts = 2
+        for attempt in range(attempts):
+            try:
+                async with self._session.request(
+                    method,
+                    url,
+                    params=params,
+                    json=json,
+                    headers=headers,
+                    timeout=timeout,
+                ) as resp:
+                    if resp.status == 204:
+                        return None
 
-        if resp.status == 401:
-            logger.warning(f"Unauthorized (401) from {self.base_url}. Attempting token refresh.")
-            resp.close()
-            if await self.refresh_token():
-                kwargs["headers"] = {**self._headers, **call_headers}
-                return await func(*args, **kwargs)
-        return resp
+                    if resp.status == 401:
+                        if attempt == 0:
+                            logger.warning(f"Unauthorized (401) from {endpoint}. Refreshing token.")
+                            if await self.refresh_token():
+                                headers = self._headers.copy()  # Update headers with new token
+                                continue
+                            else:
+                                raise RxonAuthError(f"Token refresh failed after 401 from {endpoint}")
+                        else:
+                            raise RxonAuthError(f"Unauthorized (401) from {endpoint} after retry")
+
+                    if resp.status >= 400:
+                        text = await resp.text()
+                        raise RxonProtocolError(
+                            f"HTTP {resp.status}: {text}", details={"status": resp.status, "body": text}
+                        )
+
+                    return await resp.json()
+
+            except (ClientError, TimeoutError) as e:
+                # If it's a network/timeout error, we wrap it
+                raise RxonNetworkError(f"Network error during {method} {endpoint}: {str(e)}") from e
+            except RxonError:
+                # Re-raise known errors
+                raise
+            except Exception as e:
+                # Catch-all for unexpected errors
+                logger.exception("Unexpected error in transport")
+                raise RxonError(f"Unexpected transport error: {e}") from e
+        return None
 
     async def refresh_token(self) -> Optional[TokenResponse]:
         if not self._session:
@@ -97,7 +153,6 @@ class HttpTransport(Transport):
             async with self._session.post(url) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    # Safe parsing
                     valid_fields = {k: v for k, v in data.items() if k in TokenResponse._fields}
                     token_response = TokenResponse(**valid_fields)
                     self.token = token_response.access_token
@@ -111,86 +166,67 @@ class HttpTransport(Transport):
         return None
 
     async def register(self, registration: WorkerRegistration) -> bool:
-        if not self._session:
-            logger.error("Transport not connected")
-            return False
-
-        url = f"{self.base_url}{ENDPOINT_WORKER_REGISTER}"
+        """
+        Register the holon shell with the orchestrator.
+        Raises RxonError on failure.
+        """
         payload = to_dict(registration)
-        try:
-            resp = await self._handle_401(self._session.post, url, json=payload)
-            async with resp:
-                if resp.status >= 400:
-                    logger.error(f"Error registering with {self.base_url}: {resp.status}")
-                    return False
-                return True
-        except Exception as e:
-            logger.error(f"Error registering with {self.base_url}: {e}")
-            return False
+        await self._request("POST", ENDPOINT_WORKER_REGISTER, json=payload)
+        return True
 
     async def poll_task(self, timeout: float = 30.0) -> Optional[TaskPayload]:
-        if not self._session:
-            logger.error("Transport not connected")
-            return None
-
-        url = f"{self.base_url}{ENDPOINT_TASK_NEXT.format(worker_id=self.worker_id)}"
+        """
+        Long-poll for the next available task.
+        Raises RxonError on network/protocol failures.
+        """
+        endpoint = ENDPOINT_TASK_NEXT.format(worker_id=self.worker_id)
         client_timeout = ClientTimeout(total=timeout + 5)
-        try:
-            resp = await self._handle_401(self._session.get, url, timeout=client_timeout)
-            async with resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    valid_fields = {k: v for k, v in data.items() if k in TaskPayload._fields}
-                    return TaskPayload(**valid_fields)
-                elif resp.status != 204:
-                    logger.warning(f"Unexpected status from {self.base_url} during poll: {resp.status}")
-        except Exception as e:
-            logger.error(f"Error polling tasks from {self.base_url}: {e}")
+
+        data = await self._request("GET", endpoint, timeout=client_timeout)
+
+        if data:
+            valid_fields = {k: v for k, v in data.items() if k in TaskPayload._fields}
+            return TaskPayload(**valid_fields)
         return None
 
     async def send_result(
         self, result: TaskResult, max_retries: int | None = None, initial_delay: float | None = None
     ) -> bool:
-        if not self._session:
-            logger.error("Transport not connected")
-            return False
-
-        url = f"{self.base_url}{ENDPOINT_TASK_RESULT}"
+        """
+        Send task execution result back to orchestrator.
+        Retries on RxonNetworkError.
+        Raises RxonError if all retries fail.
+        """
         payload = to_dict(result)
-
         retries = max_retries if max_retries is not None else self.result_retries
         delay = initial_delay if initial_delay is not None else self.result_retry_delay
 
+        last_error = None
         for i in range(retries):
             try:
-                resp = await self._handle_401(self._session.post, url, json=payload)
-                async with resp:
-                    if resp.status == 200:
-                        return True
-                    logger.error(f"Error sending result (attempt {i + 1}): {resp.status}")
-            except Exception as e:
-                logger.error(f"Network error sending result: {e}")
-
+                await self._request("POST", ENDPOINT_TASK_RESULT, json=payload)
+                return True
+            except RxonNetworkError as e:
+                logger.warning(f"Network error sending result (attempt {i + 1}/{retries}): {e}")
+                last_error = e
+            except RxonError as e:
+                logger.error(f"Protocol/Auth error sending result: {e}")
+                raise e
             if i < retries - 1:
                 await sleep(delay * (2**i))
+        if last_error:
+            raise last_error
         return False
 
     async def send_heartbeat(self, heartbeat: Heartbeat) -> bool:
-        if not self._session:
-            return False
-
-        url = f"{self.base_url}{ENDPOINT_WORKER_HEARTBEAT.format(worker_id=self.worker_id)}"
+        endpoint = ENDPOINT_WORKER_HEARTBEAT.format(worker_id=self.worker_id)
         payload = to_dict(heartbeat)
         try:
-            resp = await self._handle_401(self._session.patch, url, json=payload)
-            async with resp:
-                if resp.status >= 400:
-                    logger.warning(f"Heartbeat failed: {resp.status}")
-                    return False
-                return True
-        except Exception as e:
-            logger.error(f"Error sending heartbeat: {e}")
-            return False
+            await self._request("PATCH", endpoint, json=payload)
+            return True
+        except RxonError as e:
+            logger.warning(f"Heartbeat failed: {e}")
+            raise e
 
     async def send_progress(self, progress: ProgressUpdatePayload) -> bool:
         if self._ws_connection and not self._ws_connection.closed:
@@ -199,6 +235,7 @@ class HttpTransport(Transport):
                 return True
             except Exception as e:
                 logger.warning(f"Failed to send progress via WebSocket: {e}")
+                return False
         return False
 
     async def listen_for_commands(self) -> AsyncIterator[WorkerCommand]:
@@ -208,7 +245,7 @@ class HttpTransport(Transport):
         ws_url = self.base_url.replace("http", "ws", 1) + WS_ENDPOINT
         try:
             async with self._session.ws_connect(ws_url, headers=self._headers) as ws:
-                self._ws_connection = ws  # type: ignore
+                self._ws_connection = cast(Any, ws)
                 logger.info(f"Connected to WebSocket: {ws_url}")
 
                 async for msg in ws:
@@ -222,7 +259,11 @@ class HttpTransport(Transport):
                     elif msg.type == WSMsgType.ERROR:
                         logger.error(f"WebSocket connection closed with error: {ws.exception()}")
                         break
-        except Exception as e:
+        except (ClientError, TimeoutError) as e:
             logger.error(f"WebSocket connection error: {e}")
+            raise RxonNetworkError(f"WebSocket connection failed: {e}") from e
+        except Exception as e:
+            logger.error(f"WebSocket unexpected error: {e}")
+            raise RxonError(f"WebSocket error: {e}") from e
         finally:
             self._ws_connection = None

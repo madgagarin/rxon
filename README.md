@@ -65,6 +65,39 @@ listener = HttpListener(app)
 await listener.start(handler=my_handler)
 ```
 
+## 🛡️ Error Handling
+
+RXON uses a dedicated exception hierarchy grounded in `RxonError`. Transports raise specific exceptions instead of returning error codes or `None`.
+
+```python
+from rxon import create_transport
+from rxon.exceptions import RxonNetworkError, RxonAuthError
+
+try:
+    await transport.poll_task()
+except RxonNetworkError:
+    # Handle connection failures (e.g., exponential backoff)
+    pass
+except RxonAuthError:
+    # Handle critical auth failures (e.g., invalid token)
+    pass
+```
+
+## 🧪 Testing
+
+The library includes a `MockTransport` to simplify testing Workers in isolation without running a real Orchestrator.
+
+```python
+from rxon.testing import MockTransport
+
+# Use standard factory with mock:// scheme
+transport = create_transport("mock://", "test-worker", "token")
+await transport.connect()
+
+# Inject tasks directly
+transport.push_task(my_task_payload)
+```
+
 ## 📦 Package Structure
 
 -   **`rxon.models`**: DTOs for registrations, tasks, heartbeats, and results.

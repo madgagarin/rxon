@@ -9,6 +9,7 @@ from ..constants import (
     ENDPOINT_TASK_RESULT,
     ENDPOINT_WORKER_HEARTBEAT,
     ENDPOINT_WORKER_REGISTER,
+    PROTOCOL_VERSION_HEADER,
     STS_TOKEN_ENDPOINT,
     WS_ENDPOINT,
 )
@@ -57,7 +58,13 @@ class HttpListener(Listener):
     @staticmethod
     def _extract_context(request: web.Request) -> Dict[str, Any]:
         token = request.headers.get(AUTH_HEADER_WORKER)
-        return {"token": token, "transport": "http", "raw_request": request}
+        version = request.headers.get(PROTOCOL_VERSION_HEADER)
+        return {
+            "token": token,
+            "protocol_version": version,
+            "transport": "http",
+            "raw_request": request,
+        }
 
     async def _handle_register(self, request: web.Request) -> web.Response:
         try:

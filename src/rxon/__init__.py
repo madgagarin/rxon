@@ -40,7 +40,10 @@ from .constants import (
 from .exceptions import (
     IntegrityError,
     ParamValidationError,
-    RXONProtocolError,
+    RxonAuthError,
+    RxonError,
+    RxonNetworkError,
+    RxonProtocolError,
     S3ConfigMismatchError,
 )
 from .models import (
@@ -111,9 +114,12 @@ __all__ = [
     "WORKER_API_PREFIX",
     "WS_ENDPOINT",
     # Exceptions
+    "RxonError",
+    "RxonNetworkError",
+    "RxonAuthError",
+    "RxonProtocolError",
     "IntegrityError",
     "ParamValidationError",
-    "RXONProtocolError",
     "S3ConfigMismatchError",
     # Models
     "FileMetadata",

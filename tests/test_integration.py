@@ -4,6 +4,7 @@ import pytest
 from aiohttp import web
 
 from rxon import HttpListener, create_transport
+from rxon.exceptions import RxonNetworkError, RxonProtocolError
 from rxon.models import (
     Heartbeat,
     ProgressUpdatePayload,
@@ -104,10 +105,22 @@ async def test_full_cycle(server):
             installed_models=[],
             capabilities=WorkerCapabilities("host", "127.0.0.1", {}),
         )
+
+        original_handler = listener.handler
+
+        async def check_version_handler(msg_type, payload, context):
+            from rxon.constants import PROTOCOL_VERSION
+
+            assert context["protocol_version"] == PROTOCOL_VERSION
+            return await original_handler(msg_type, payload, context)
+
+        listener.handler = check_version_handler
+
         success = await transport.register(reg)
         assert success is True
         assert len(state["registered"]) == 1
         assert state["registered"][0]["worker_id"] == worker_id
+        listener.handler = original_handler
 
         # 3. Heartbeat
         hb = Heartbeat(worker_id, "idle", 0.1, [], [], [], None)
@@ -270,20 +283,22 @@ async def test_server_error_handling(server):
 
     listener.handler = buggy_handler
 
-    # Should return 500 but not crash the server
-    # Transport logs error and returns False/None
-    success = await transport.register(
-        WorkerRegistration("w", "t", [], Resources(1, 1), {}, [], WorkerCapabilities("h", "i", {}))
-    )
-    assert success is False
+    # Should return 500. Transport raises RxonProtocolError (since it's >= 400)
+    with pytest.raises(RxonProtocolError) as excinfo:
+        await transport.register(
+            WorkerRegistration("w", "t", [], Resources(1, 1), {}, [], WorkerCapabilities("h", "i", {}))
+        )
+    assert "500" in str(excinfo.value)
 
     # Case 2: Handler raises HTTP Exception (e.g. 400 Bad Request)
     async def validation_handler(msg_type, payload, context):
         raise web.HTTPBadRequest(text="Invalid data")
 
     listener.handler = validation_handler
-    success = await transport.send_heartbeat(Heartbeat("w", "s", 0, [], [], [], None))
-    assert success is False  # Client receives 400, logs warning, returns False
+
+    with pytest.raises(RxonProtocolError) as excinfo:
+        await transport.send_heartbeat(Heartbeat("w", "s", 0, [], [], [], None))
+    assert "400" in str(excinfo.value)
 
     await transport.close()
 
@@ -308,11 +323,11 @@ async def test_no_handler_configured(unused_tcp_port_factory):
     transport = create_transport(f"http://127.0.0.1:{port}", "w", "t")
     await transport.connect()
 
-    # Register should fail with 500
-    success = await transport.register(
-        WorkerRegistration("w", "t", [], Resources(1, 1), {}, [], WorkerCapabilities("h", "i", {}))
-    )
-    assert success is False
+    # Register should fail with 500 (RxonProtocolError)
+    with pytest.raises(RxonProtocolError):
+        await transport.register(
+            WorkerRegistration("w", "t", [], Resources(1, 1), {}, [], WorkerCapabilities("h", "i", {}))
+        )
 
     await transport.close()
     await runner.cleanup()
@@ -328,24 +343,23 @@ async def test_network_errors(unused_tcp_port_factory):
     transport = create_transport(base_url, "worker-net", "token")
     await transport.connect()
 
-    # 1. Register should fail gracefully (catch ClientConnectorError)
-    success = await transport.register(
-        WorkerRegistration("w", "t", [], Resources(1, 1), {}, [], WorkerCapabilities("h", "i", {}))
-    )
-    assert success is False
+    # 1. Register should raise RxonNetworkError
+    with pytest.raises(RxonNetworkError):
+        await transport.register(
+            WorkerRegistration("w", "t", [], Resources(1, 1), {}, [], WorkerCapabilities("h", "i", {}))
+        )
 
-    # 2. Poll should return None gracefully
-    task = await transport.poll_task(timeout=0.1)
-    assert task is None
+    # 2. Poll should raise RxonNetworkError
+    with pytest.raises(RxonNetworkError):
+        await transport.poll_task(timeout=0.1)
 
-    # 3. Heartbeat should fail gracefully
-    success = await transport.send_heartbeat(Heartbeat("w", "s", 0, [], [], [], None))
-    assert success is False
+    # 3. Heartbeat should raise RxonError/NetworkError
+    with pytest.raises(RxonNetworkError):
+        await transport.send_heartbeat(Heartbeat("w", "s", 0, [], [], [], None))
 
-    # 4. Result sending should fail gracefully (and retry internally)
-    # We set retries=0 to speed up test
-    transport.result_retries = 0
-    success = await transport.send_result(TaskResult("j", "t", "w", "success"))
-    assert success is False
+    # 4. Result sending should raise RxonNetworkError (after retries)
+    transport.result_retries = 1
+    with pytest.raises(RxonNetworkError):
+        await transport.send_result(TaskResult("j", "t", "w", "success"))
 
     await transport.close()

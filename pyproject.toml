@@ -4,17 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rxon"
-version = "1.0b1"
+version = "1.0b2"
 description = "RXON (Reverse Axon) - Lightweight Inter-node Reverse Communication Protocol."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
     {name = "Dmitrii Gagarin", email = "madgagarin@gmail.com"},
 ]
-maintainers = [
-    {name = "Dmitrii Gagarin", email = "madgagarin@gmail.com"},
-]
-keywords = ["rxon", "hln", "protocol", "distributed-systems", "holarchy", "holon"]
+keywords = ["rxon", "reverse", "hln", "protocol", "distributed-systems", "holarchy", "holon"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",

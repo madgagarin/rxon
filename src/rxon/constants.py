@@ -38,10 +38,12 @@ __all__ = [
     "JOB_STATUS_WAITING_FOR_PARALLEL",
     "WORKER_API_PREFIX",
     "PROTOCOL_VERSION",
+    "PROTOCOL_VERSION_HEADER",
 ]
 
 # --- Protocol Metadata ---
-PROTOCOL_VERSION = "1.0"
+PROTOCOL_VERSION = "1.0b2"
+PROTOCOL_VERSION_HEADER = "X-RXON-Version"
 
 # --- Auth Headers ---
 AUTH_HEADER_CLIENT = "X-Client-Token"
