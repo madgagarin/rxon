@@ -1,4 +1,5 @@
-from typing import Any, Awaitable, Callable, Dict, Optional, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import Any, TypeVar
 
 from aiohttp import web
 from orjson import loads
@@ -9,6 +10,7 @@ from ..constants import (
     ENDPOINT_TASK_RESULT,
     ENDPOINT_WORKER_HEARTBEAT,
     ENDPOINT_WORKER_REGISTER,
+    PROTOCOL_VERSION,
     PROTOCOL_VERSION_HEADER,
     STS_TOKEN_ENDPOINT,
     WS_ENDPOINT,
@@ -25,11 +27,21 @@ class HttpListener(Listener):
 
     def __init__(self, app: web.Application):
         self.app = app
-        self.handler: Optional[Callable[[str, Any, Dict[str, Any]], Awaitable[Any]]] = None
+        self.handler: Callable[[str, Any, dict[str, Any]], Awaitable[Any]] | None = None
+        self._setup_middleware()
+
+    def _setup_middleware(self):
+        @web.middleware
+        async def version_middleware(request, handler):
+            response = await handler(request)
+            response.headers[PROTOCOL_VERSION_HEADER] = PROTOCOL_VERSION
+            return response
+
+        self.app.middlewares.append(version_middleware)
 
     async def start(
         self,
-        handler: Callable[[str, Any, Dict[str, Any]], Awaitable[Any]],
+        handler: Callable[[str, Any, dict[str, Any]], Awaitable[Any]],
     ) -> None:
         self.handler = handler
         self._setup_routes()
@@ -56,15 +68,23 @@ class HttpListener(Listener):
         self.app.router.add_get(f"{WS_ENDPOINT}/{{worker_id}}", self._handle_ws)
 
     @staticmethod
-    def _extract_context(request: web.Request) -> Dict[str, Any]:
+    def _extract_context(request: web.Request) -> dict[str, Any]:
+        from ..security import extract_cert_identity
+
         token = request.headers.get(AUTH_HEADER_WORKER)
         version = request.headers.get(PROTOCOL_VERSION_HEADER)
+        cert_id = extract_cert_identity(request)
+
         return {
             "token": token,
             "protocol_version": version,
+            "cert_identity": cert_id,
             "transport": "http",
             "raw_request": request,
         }
+
+    def _json_response(self, data: Any, **kwargs: Any) -> web.Response:
+        return web.json_response(data, **kwargs)
 
     async def _handle_register(self, request: web.Request) -> web.Response:
         try:
@@ -73,19 +93,19 @@ class HttpListener(Listener):
 
             context = self._extract_context(request)
             if self.handler:
-                await self.handler("register", payload, context)
-                return web.json_response({"status": "registered"})
-            return web.json_response({"error": "No handler configured"}, status=500)
+                resp = await self.handler("register", payload, context)
+                return self._json_response(resp or {"status": "registered"})
+            return self._json_response({"error": "No handler configured"}, status=500)
         except web.HTTPException as e:
-            return web.json_response({"error": e.text or str(e)}, status=e.status)
+            return self._json_response({"error": e.text or str(e)}, status=e.status)
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            return self._json_response({"error": str(e)}, status=500)
 
     async def _handle_poll(self, request: web.Request) -> web.Response:
         try:
             worker_id = request.match_info.get("worker_id")
             if not worker_id:
-                return web.json_response({"error": "worker_id required"}, status=400)
+                return self._json_response({"error": "worker_id required"}, status=400)
 
             context = self._extract_context(request)
             context["worker_id_hint"] = worker_id  # Important for auth
@@ -93,13 +113,13 @@ class HttpListener(Listener):
             if self.handler:
                 task = await self.handler("poll", worker_id, context)
                 if task:
-                    return web.json_response(task._asdict() if hasattr(task, "_asdict") else task)
+                    return self._json_response(task._asdict() if hasattr(task, "_asdict") else task)
                 return web.Response(status=204)
             return web.Response(status=500)
         except web.HTTPException as e:
-            return web.json_response({"error": e.text or str(e)}, status=e.status)
+            return self._json_response({"error": e.text or str(e)}, status=e.status)
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            return self._json_response({"error": str(e)}, status=500)
 
     async def _handle_result(self, request: web.Request) -> web.Response:
         try:
@@ -108,13 +128,13 @@ class HttpListener(Listener):
 
             context = self._extract_context(request)
             if self.handler:
-                await self.handler("result", payload, context)
-                return web.json_response({"status": "ok"})
-            return web.json_response({"error": "No handler configured"}, status=500)
+                resp = await self.handler("result", payload, context)
+                return self._json_response(resp or {"status": "ok"})
+            return self._json_response({"error": "No handler configured"}, status=500)
         except web.HTTPException as e:
-            return web.json_response({"error": e.text or str(e)}, status=e.status)
+            return self._json_response({"error": e.text or str(e)}, status=e.status)
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            return self._json_response({"error": str(e)}, status=500)
 
     async def _handle_heartbeat(self, request: web.Request) -> web.Response:
         try:
@@ -129,24 +149,24 @@ class HttpListener(Listener):
 
             if self.handler:
                 resp = await self.handler("heartbeat", payload, context)
-                return web.json_response(resp)
+                return self._json_response(resp)
             return web.Response(status=500)
         except web.HTTPException as e:
-            return web.json_response({"error": e.text or str(e)}, status=e.status)
+            return self._json_response({"error": e.text or str(e)}, status=e.status)
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            return self._json_response({"error": str(e)}, status=500)
 
     async def _handle_sts(self, request: web.Request) -> web.Response:
         try:
             context = self._extract_context(request)
             if self.handler:
                 token_data = await self.handler("sts_token", None, context)
-                return web.json_response(token_data._asdict() if hasattr(token_data, "_asdict") else token_data)
+                return self._json_response(token_data._asdict() if hasattr(token_data, "_asdict") else token_data)
             return web.Response(status=500)
         except web.HTTPException as e:
-            return web.json_response({"error": e.text or str(e)}, status=e.status)
+            return self._json_response({"error": e.text or str(e)}, status=e.status)
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            return self._json_response({"error": str(e)}, status=500)
 
     async def _handle_ws(self, request: web.Request) -> web.StreamResponse:
         worker_id = request.match_info.get("worker_id")

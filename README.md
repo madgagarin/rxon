@@ -1,10 +1,10 @@
 # RXON (Reverse Axon) Protocol
 
+**EN** | [ES](https://github.com/madgagarin/rxon/blob/main/docs/es/README.md) | [RU](https://github.com/madgagarin/rxon/blob/main/docs/ru/README.md)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 [![Typing: Typed](https://img.shields.io/badge/Typing-Typed-brightgreen.svg)](https://peps.python.org/pep-0561/)
-
-> **[RU](https://github.com/madgagarin/rxon/blob/main/README_RU.md)**
 
 **RXON** (Reverse Axon) is a lightweight reverse-connection inter-service communication protocol designed for the **[HLN (Hierarchical Logic Network)](https://github.com/avtomatika-ai/hln)** architecture.
 
@@ -49,39 +49,13 @@ await transport.register(reg_payload)
 task = await transport.poll_task(timeout=30)
 ```
 
-### Usage Example (Orchestrator side)
-
-```python
-from rxon import HttpListener, TaskPayload
-
-async def my_handler(message_type, payload, context):
-    if message_type == "poll":
-        # Task dispatch logic
-        return TaskPayload(...)
-    return True
-
-# Listener attaches to a web application or starts its own server
-listener = HttpListener(app)
-await listener.start(handler=my_handler)
-```
-
 ## 🛡️ Error Handling
 
-RXON uses a dedicated exception hierarchy grounded in `RxonError`. Transports raise specific exceptions instead of returning error codes or `None`.
-
-```python
-from rxon import create_transport
-from rxon.exceptions import RxonNetworkError, RxonAuthError
-
-try:
-    await transport.poll_task()
-except RxonNetworkError:
-    # Handle connection failures (e.g., exponential backoff)
-    pass
-except RxonAuthError:
-    # Handle critical auth failures (e.g., invalid token)
-    pass
-```
+RXON uses a dedicated exception hierarchy grounded in `RxonError`. It also defines standardized error codes for task results:
+-   `TIMEOUT_ERROR`: The worker could not finish in time.
+-   `LATE_RESULT`: (Response) The orchestrator refused the result because the deadline has passed.
+-   `STALE_TASK`: (Response) The orchestrator refused the result because the task has been reassigned or the job state has moved on.
+-   `RESOURCE_EXHAUSTED_ERROR`: Transient failure due to lack of local resources.
 
 ## 🧪 Testing
 
@@ -96,25 +70,6 @@ await transport.connect()
 
 # Inject tasks directly
 transport.push_task(my_task_payload)
-```
-
-## 📦 Package Structure
-
--   **`rxon.models`**: DTOs for registrations, tasks, heartbeats, and results.
--   **`rxon.constants`**: Standardized error codes (TIMEOUT, RESOURCE_EXHAUSTED, etc.) and API endpoints.
--   **`rxon.transports`**: Abstract base classes and implementations (HTTP, WebSocket).
--   **`rxon.blob`**: Unified interface for blob storage operations (S3 URI parsing, hashing).
--   **`rxon.security`**: Helpers for mTLS and access tokens.
-
-## 🚀 Installation
-
-```bash
-pip install rxon
-```
-
-For developers (local):
-```bash
-pip install -e packages/rxon
 ```
 
 ## 📜 License

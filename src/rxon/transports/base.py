@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Any, AsyncIterator, Awaitable, Callable, Optional
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any
 
 from ..models import (
     Heartbeat,
@@ -35,16 +36,16 @@ class Transport(ABC):
         pass
 
     @abstractmethod
-    async def register(self, registration: WorkerRegistration) -> bool:
+    async def register(self, registration: WorkerRegistration) -> Any:
         """
         Register the holon shell with the orchestrator.
-        Returns True if successful.
+        Returns response data if successful.
         Raises RxonError subclass on failure.
         """
         pass
 
     @abstractmethod
-    async def poll_task(self, timeout: float = 30.0) -> Optional[TaskPayload]:
+    async def poll_task(self, timeout: float = 30.0) -> TaskPayload | None:
         """
         Long-poll for the next available task.
         Returns None if no task available (timeout/204).
@@ -62,10 +63,10 @@ class Transport(ABC):
         pass
 
     @abstractmethod
-    async def send_heartbeat(self, heartbeat: Heartbeat) -> bool:
+    async def send_heartbeat(self, heartbeat: Heartbeat) -> dict[str, Any] | None:
         """
         Update holon status and availability.
-        Returns True if successful.
+        Returns response data (e.g. commands) if successful.
         Raises RxonError subclass on failure.
         """
         pass
@@ -85,7 +86,7 @@ class Transport(ABC):
         pass
 
     @abstractmethod
-    async def refresh_token(self) -> Optional[TokenResponse]:
+    async def refresh_token(self) -> TokenResponse | None:
         """
         Refresh the authentication token (e.g. using STS).
         """

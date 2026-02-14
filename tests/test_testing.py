@@ -19,14 +19,15 @@ async def test_mock_transport_flow():
     reg = WorkerRegistration(
         worker_id="mock-1",
         worker_type="cpu",
-        supported_tasks=[],
+        supported_skills=[],
         resources=Resources(1, 1),
         installed_software={},
         installed_models=[],
         capabilities=WorkerCapabilities("h", "i", {}),
     )
     success = await transport.register(reg)
-    assert success is True
+    assert success is not None
+    assert success.get("status") == "registered"
     assert len(transport.registered) == 1
     assert transport.registered[0].worker_id == "mock-1"
 

@@ -1,7 +1,8 @@
 from asyncio import sleep
+from collections.abc import AsyncIterator
 from logging import getLogger
 from ssl import SSLContext
-from typing import Any, AsyncIterator, Dict, Optional, cast
+from typing import Any, cast
 
 from aiohttp import ClientError, ClientSession, ClientTimeout, TCPConnector, WSMsgType
 
@@ -11,6 +12,10 @@ from ..constants import (
     ENDPOINT_TASK_RESULT,
     ENDPOINT_WORKER_HEARTBEAT,
     ENDPOINT_WORKER_REGISTER,
+    IGNORED_REASON_CANCELLED,
+    IGNORED_REASON_LATE,
+    IGNORED_REASON_MISMATCH,
+    IGNORED_REASON_NOT_FOUND,
     PROTOCOL_VERSION,
     PROTOCOL_VERSION_HEADER,
     STS_TOKEN_ENDPOINT,
@@ -48,8 +53,8 @@ class HttpTransport(Transport):
         base_url: str,
         worker_id: str,
         token: str,
-        ssl_context: Optional[SSLContext] = None,
-        session: Optional[ClientSession] = None,
+        ssl_context: SSLContext | None = None,
+        session: ClientSession | None = None,
         verify_ssl: bool = True,
         result_retries: int = 3,
         result_retry_delay: float = 0.1,
@@ -68,6 +73,7 @@ class HttpTransport(Transport):
         self.result_retries = result_retries
         self.result_retry_delay = result_retry_delay
         self._ws_connection = None
+        self._version_warning_logged = False
 
     async def connect(self) -> None:
         if not self._session:
@@ -86,9 +92,9 @@ class HttpTransport(Transport):
         method: str,
         endpoint: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
-        json: Optional[Any] = None,
-        timeout: Optional[ClientTimeout] = None,
+        params: dict[str, Any] | None = None,
+        json: Any | None = None,
+        timeout: ClientTimeout | None = None,
     ) -> Any:
         """
         Internal helper to execute HTTP requests with automatic 401 retry and error handling.
@@ -109,6 +115,16 @@ class HttpTransport(Transport):
                     headers=headers,
                     timeout=timeout,
                 ) as resp:
+                    # Check Protocol Version
+                    server_version = resp.headers.get(PROTOCOL_VERSION_HEADER)
+                    if server_version and server_version != PROTOCOL_VERSION and not self._version_warning_logged:
+                        logger.warning(
+                            f"RXON Protocol Version Mismatch! "
+                            f"Orchestrator: {server_version}, Worker: {PROTOCOL_VERSION}. "
+                            "Please update your SDK."
+                        )
+                        self._version_warning_logged = True
+
                     if resp.status == 204:
                         return None
 
@@ -143,14 +159,15 @@ class HttpTransport(Transport):
                 raise RxonError(f"Unexpected transport error: {e}") from e
         return None
 
-    async def refresh_token(self) -> Optional[TokenResponse]:
+    async def refresh_token(self) -> TokenResponse | None:
         if not self._session:
             logger.error("Cannot refresh token: Session not initialized")
             return None
 
         url = f"{self.base_url}{STS_TOKEN_ENDPOINT}"
         try:
-            async with self._session.post(url) as resp:
+            # We must send current headers (including protocol version)
+            async with self._session.post(url, headers=self._headers) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     valid_fields = {k: v for k, v in data.items() if k in TokenResponse._fields}
@@ -165,16 +182,14 @@ class HttpTransport(Transport):
             logger.error(f"Error refreshing token: {e}")
         return None
 
-    async def register(self, registration: WorkerRegistration) -> bool:
+    async def register(self, registration: WorkerRegistration) -> Any:
         """
         Register the holon shell with the orchestrator.
         Raises RxonError on failure.
         """
-        payload = to_dict(registration)
-        await self._request("POST", ENDPOINT_WORKER_REGISTER, json=payload)
-        return True
+        return await self._request("POST", ENDPOINT_WORKER_REGISTER, json=registration)
 
-    async def poll_task(self, timeout: float = 30.0) -> Optional[TaskPayload]:
+    async def poll_task(self, timeout: float = 30.0) -> TaskPayload | None:
         """
         Long-poll for the next available task.
         Raises RxonError on network/protocol failures.
@@ -185,8 +200,11 @@ class HttpTransport(Transport):
         data = await self._request("GET", endpoint, timeout=client_timeout)
 
         if data:
-            valid_fields = {k: v for k, v in data.items() if k in TaskPayload._fields}
-            return TaskPayload(**valid_fields)
+            try:
+                valid_fields = {k: v for k, v in data.items() if k in TaskPayload._fields}
+                return TaskPayload(**valid_fields)
+            except TypeError as e:
+                raise RxonProtocolError(f"Invalid TaskPayload from server: {e}", details=data) from e
         return None
 
     async def send_result(
@@ -197,14 +215,31 @@ class HttpTransport(Transport):
         Retries on RxonNetworkError.
         Raises RxonError if all retries fail.
         """
-        payload = to_dict(result)
         retries = max_retries if max_retries is not None else self.result_retries
         delay = initial_delay if initial_delay is not None else self.result_retry_delay
 
         last_error = None
         for i in range(retries):
             try:
-                await self._request("POST", ENDPOINT_TASK_RESULT, json=payload)
+                resp_data = await self._request("POST", ENDPOINT_TASK_RESULT, json=result)
+                if isinstance(resp_data, dict) and resp_data.get("status") == "ignored":
+                    reason = resp_data.get("reason")
+                    msg = resp_data.get("message", "No message provided")
+
+                    log_msg = f"Result for job {result.job_id} ignored. Reason: {reason}. Message: {msg}"
+
+                    if reason == IGNORED_REASON_LATE:
+                        logger.warning(log_msg)
+                    elif reason == IGNORED_REASON_CANCELLED:
+                        logger.info(log_msg)
+                    elif reason == IGNORED_REASON_NOT_FOUND:
+                        logger.error(log_msg)
+                    elif reason == IGNORED_REASON_MISMATCH:
+                        logger.critical(log_msg)
+                    else:
+                        logger.warning(log_msg)
+
+                    return False
                 return True
             except RxonNetworkError as e:
                 logger.warning(f"Network error sending result (attempt {i + 1}/{retries}): {e}")
@@ -218,12 +253,10 @@ class HttpTransport(Transport):
             raise last_error
         return False
 
-    async def send_heartbeat(self, heartbeat: Heartbeat) -> bool:
+    async def send_heartbeat(self, heartbeat: Heartbeat) -> dict[str, Any] | None:
         endpoint = ENDPOINT_WORKER_HEARTBEAT.format(worker_id=self.worker_id)
-        payload = to_dict(heartbeat)
         try:
-            await self._request("PATCH", endpoint, json=payload)
-            return True
+            return await self._request("PATCH", endpoint, json=heartbeat)
         except RxonError as e:
             logger.warning(f"Heartbeat failed: {e}")
             raise e

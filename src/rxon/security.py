@@ -1,6 +1,6 @@
 from pathlib import Path
 from ssl import CERT_OPTIONAL, CERT_REQUIRED, Purpose, SSLContext, create_default_context
-from typing import Any, Optional
+from typing import Any
 
 __all__ = [
     "create_server_ssl_context",
@@ -12,7 +12,7 @@ __all__ = [
 def create_server_ssl_context(
     cert_path: str | Path,
     key_path: str | Path,
-    ca_path: Optional[str | Path] = None,
+    ca_path: str | Path | None = None,
     require_client_cert: bool = False,
 ) -> SSLContext:
     """
@@ -38,9 +38,9 @@ def create_server_ssl_context(
 
 
 def create_client_ssl_context(
-    ca_path: Optional[str | Path] = None,
-    cert_path: Optional[str | Path] = None,
-    key_path: Optional[str | Path] = None,
+    ca_path: str | Path | None = None,
+    cert_path: str | Path | None = None,
+    key_path: str | Path | None = None,
 ) -> SSLContext:
     """
     Creates an SSLContext for the client (Worker).
@@ -60,7 +60,7 @@ def create_client_ssl_context(
     return context
 
 
-def extract_cert_identity(request: Any) -> Optional[str]:
+def extract_cert_identity(request: Any) -> str | None:
     """
     Extracts the identity (Common Name) from the client certificate.
     Works with aiohttp request transport.

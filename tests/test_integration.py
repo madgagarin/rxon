@@ -50,7 +50,7 @@ async def server(unused_tcp_port_factory):
     async def mock_handler(msg_type, payload, context):
         if msg_type == "register":
             state["registered"].append(payload)
-            return True
+            return {"status": "registered"}
         elif msg_type == "heartbeat":
             state["heartbeats"].append(payload)
             return {"status": "ok"}
@@ -61,7 +61,7 @@ async def server(unused_tcp_port_factory):
             return None  # 204 No Content
         elif msg_type == "result":
             state["results"].append(payload)
-            return True
+            return {"status": "ok"}
         elif msg_type == "sts_token":
             from rxon.models import TokenResponse
 
@@ -99,7 +99,7 @@ async def test_full_cycle(server):
         reg = WorkerRegistration(
             worker_id=worker_id,
             worker_type="cpu",
-            supported_tasks=["test"],
+            supported_skills=["test"],
             resources=Resources(1, 4),
             installed_software={},
             installed_models=[],
@@ -117,7 +117,7 @@ async def test_full_cycle(server):
         listener.handler = check_version_handler
 
         success = await transport.register(reg)
-        assert success is True
+        assert success is not None
         assert len(state["registered"]) == 1
         assert state["registered"][0]["worker_id"] == worker_id
         listener.handler = original_handler
@@ -125,7 +125,7 @@ async def test_full_cycle(server):
         # 3. Heartbeat
         hb = Heartbeat(worker_id, "idle", 0.1, [], [], [], None)
         success = await transport.send_heartbeat(hb)
-        assert success is True
+        assert success is not None
         assert len(state["heartbeats"]) == 1
 
         # 4. Poll (Empty)
@@ -160,12 +160,7 @@ async def test_auth_refresh(server):
     """Test that transport handles 401 by refreshing token and retrying."""
     base_url, state, listener = server
 
-    # Override handler to force 401 once
-    auth_attempts = 0
-
     async def auth_fail_handler(msg_type, payload, context):
-        nonlocal auth_attempts
-        # Simulate 401 on first heartbeat attempt
         if msg_type == "heartbeat":
             token = context.get("token")
             if token == "expired-token":
@@ -175,7 +170,7 @@ async def test_auth_refresh(server):
         if msg_type == "sts_token":
             return {"access_token": "valid-token", "expires_in": 300, "worker_id": "test"}
 
-        return True
+        return {"status": "ok"}
 
     listener.handler = auth_fail_handler
 
@@ -191,9 +186,8 @@ async def test_auth_refresh(server):
         # 3. Retry heartbeat (success with new token)
         success = await transport.send_heartbeat(hb)
 
-        assert success is True
+        assert success is not None
         assert transport.token == "valid-token"
-
     finally:
         await transport.close()
 
@@ -312,7 +306,7 @@ async def test_no_handler_configured(unused_tcp_port_factory):
     # Don't call start() with handler, just setup routes manually or start without handler if possible
     # But start() requires handler. So we manually setup routes to simulate "handler missing" or start then set to None
 
-    await listener.start(lambda m, p, c: True)  # Valid start
+    await listener.start(lambda m, p, c: {"status": "ok"})  # Valid start
     listener.handler = None  # Break it
 
     runner = web.AppRunner(app)

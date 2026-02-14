@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, NamedTuple, Optional
+from typing import Any, NamedTuple
 
 __all__ = [
     "GPUInfo",
@@ -25,7 +25,7 @@ class GPUInfo(NamedTuple):
 class Resources(NamedTuple):
     max_concurrent_tasks: int
     cpu_cores: int
-    gpu_info: Optional[GPUInfo] = None
+    gpu_info: GPUInfo | None = None
 
 
 class InstalledModel(NamedTuple):
@@ -36,24 +36,24 @@ class InstalledModel(NamedTuple):
 class WorkerCapabilities(NamedTuple):
     hostname: str
     ip_address: str
-    cost_per_skill: Dict[str, float]
-    s3_config_hash: Optional[str] = None
-    extra: Optional[Dict[str, Any]] = None
+    cost_per_skill: dict[str, float]
+    s3_config_hash: str | None = None
+    extra: dict[str, Any] | None = None
 
 
 class FileMetadata(NamedTuple):
     uri: str
     size: int
-    etag: Optional[str] = None
+    etag: str | None = None
 
 
 class WorkerRegistration(NamedTuple):
     worker_id: str
     worker_type: str
-    supported_tasks: List[str]
+    supported_skills: list[str]
     resources: Resources
-    installed_software: Dict[str, str]
-    installed_models: List[InstalledModel]
+    installed_software: dict[str, str]
+    installed_models: list[InstalledModel]
     capabilities: WorkerCapabilities
 
 
@@ -68,29 +68,29 @@ class ProgressUpdatePayload(NamedTuple):
     task_id: str
     job_id: str
     progress: float
-    message: Optional[str] = None
+    message: str | None = None
 
 
 class WorkerCommand(NamedTuple):
     command: str
-    task_id: Optional[str] = None
-    job_id: Optional[str] = None
-    params: Optional[Dict[str, Any]] = None
+    task_id: str | None = None
+    job_id: str | None = None
+    params: dict[str, Any] | None = None
 
 
 class TaskPayload(NamedTuple):
     job_id: str
     task_id: str
     type: str
-    params: Dict[str, Any]
-    tracing_context: Dict[str, str]
-    params_metadata: Optional[Dict[str, FileMetadata]] = None
+    params: dict[str, Any]
+    tracing_context: dict[str, str]
+    params_metadata: dict[str, FileMetadata] | None = None
 
 
 class TaskError(NamedTuple):
     code: str
     message: str
-    details: Optional[Dict[str, Any]] = None
+    details: dict[str, Any] | None = None
 
 
 class TaskResult(NamedTuple):
@@ -98,17 +98,17 @@ class TaskResult(NamedTuple):
     task_id: str
     worker_id: str
     status: str  # success, failure, cancelled
-    data: Optional[Dict[str, Any]] = None
-    error: Optional[TaskError] = None
-    data_metadata: Optional[Dict[str, FileMetadata]] = None
+    data: dict[str, Any] | None = None
+    error: TaskError | None = None
+    data_metadata: dict[str, FileMetadata] | None = None
 
 
 class Heartbeat(NamedTuple):
     worker_id: str
     status: str
     load: float
-    current_tasks: List[str]
-    supported_tasks: List[str]
-    hot_cache: List[str]
-    skill_dependencies: Optional[Dict[str, List[str]]] = None
-    hot_skills: Optional[List[str]] = None
+    current_tasks: list[str]
+    supported_skills: list[str]
+    hot_cache: list[str]
+    skill_dependencies: dict[str, list[str]] | None = None
+    hot_skills: list[str] | None = None

@@ -1,5 +1,4 @@
 from hashlib import sha256
-from typing import Tuple
 from urllib.parse import urlparse
 
 __all__ = [
@@ -24,7 +23,7 @@ def calculate_config_hash(endpoint: str | None, access_key: str | None, bucket: 
     return sha256(config_str.encode()).hexdigest()[:16]
 
 
-def parse_uri(uri: str, default_bucket: str | None = None, prefix: str = "") -> Tuple[str, str, bool]:
+def parse_uri(uri: str, default_bucket: str | None = None, prefix: str = "") -> tuple[str, str, bool]:
     """
     Parses a Blob/S3 URI or relative path into (bucket, key, is_directory).
     Protocol: s3://bucket/key

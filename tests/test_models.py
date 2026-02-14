@@ -32,7 +32,7 @@ def test_worker_registration_serialization():
     reg = WorkerRegistration(
         worker_id="worker-01",
         worker_type="gpu",
-        supported_tasks=["gen_image", "upscale"],
+        supported_skills=["gen_image", "upscale"],
         resources=Resources(max_concurrent_tasks=2, cpu_cores=8, gpu_info=GPUInfo("RTX 4090", 24)),
         installed_software={"python": "3.11", "cuda": "12.1"},
         installed_models=[InstalledModel("sdxl", "1.0")],
