@@ -77,6 +77,12 @@ from rxon.security import (
     create_client_ssl_context,
     create_server_ssl_context,
     extract_cert_identity,
+    sign_bubbling_chain,
+    sign_bubbling_chain_hmac,
+    sign_payload_ed25519,
+    verify_bubbling_chain_hmac,
+    verify_bubbling_chain_signature,
+    verify_signature_ed25519,
 )
 from rxon.transports.base import Listener, Transport
 from rxon.transports.factory import create_transport
@@ -157,6 +163,12 @@ __all__ = [
     "create_client_ssl_context",
     "create_server_ssl_context",
     "extract_cert_identity",
+    "sign_payload_ed25519",
+    "verify_signature_ed25519",
+    "sign_bubbling_chain",
+    "verify_bubbling_chain_signature",
+    "sign_bubbling_chain_hmac",
+    "verify_bubbling_chain_hmac",
     "Listener",
     "Transport",
     "create_transport",

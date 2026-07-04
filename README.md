@@ -16,30 +16,33 @@ In traditional networks, commands usually flow "top-down" (Push model). In **RXO
 
 ## ✨ Key Features
 
--   **Reverse Connection (PULL)**: Nodes connect to the orchestrator to pull tasks, ensuring compatibility with complex network environments (NAT/Firewalls).
--   **Zero Trust Security**: Payload signing via HMAC-SHA256 with constant-time verification. Support for identity chains and mTLS certificate identity extraction.
--   **Deep Model Restoration**: Robust `from_dict` utility that recursively restores complex Python types (NamedTuples, Dataclasses, Enums, UUIDs) from raw dictionaries, supporting nested structures and `Union` types.
--   **Secure Serialization**: `to_dict` utility that recursively strips `None` values to reduce payload size and normalizes `float` values (e.g., `1.0` -> `1`) to ensure stable cryptographic hashes.
--   **Automated Contract Validation**: Built-in JSON Schema engine that automatically infers schemas from Python types and validates `TaskPayload` parameters against `SkillInfo` contracts.
--   **Advanced Resource Matching**: Mathematical logic for resource allocation:
-    *   **Numbers**: Uses **GE (Greater or Equal)** logic (Requirement <= Available).
-    *   **Lists**: Uses **Inclusion** (val in list) or **Intersection** (any common element).
-    *   **Strings**: Case-insensitive partial matching for hardware models.
+- **Reverse Connection (PULL)**: Nodes connect to the orchestrator to pull tasks, ensuring compatibility with complex network environments (NAT/Firewalls).
+- **Zero Trust Security**: Payload signing via HMAC-SHA256 (symmetric) and Ed25519 (asymmetric digital signatures) with constant-time verification. Support for signed bubbling chains and mTLS certificate identity extraction.
+- **Deep Model Restoration**: Robust `from_dict` utility powered by `msgspec.convert` that recursively restores complex Python types (msgspec.Structs, Enums, UUIDs, datetimes) from raw dictionaries, supporting nested structures and `Union` types.
+- **Secure Serialization**: `to_dict` utility that recursively strips `None` values to reduce payload size and normalizes `float` values (e.g., `1.0` -> `1`) to ensure stable cryptographic hashes.
+- **Automated Contract Validation**: Built-in JSON Schema engine that automatically infers schemas from Python types and validates `TaskPayload` parameters against `SkillInfo` contracts.
+- **Advanced Resource Matching**: Mathematical logic for resource allocation:
+  - **Numbers**: Uses **GE (Greater or Equal)** logic (Requirement <= Available).
+  - **Lists**: Uses **Inclusion** (val in list) or **Intersection** (any common element).
+  - **Strings**: Case-insensitive partial matching for hardware models.
 - **Unified Telemetry**: Heartbeats include granular metrics for any custom devices (Sensors, GPUs, Actuators) and generic system properties via the extensible `HardwareDevice` model.
--   **Resilient Transport**: HTTP/WebSocket implementation with Secure Token Service (STS) supporting **Refresh Tokens**, exponential backoff for reconnections, and built-in **Rate Limit (HTTP 429)** handling with `Retry-After`.
-
+- **Resilient Transport**: HTTP/WebSocket implementation with Secure Token Service (STS) supporting **Refresh Tokens**, exponential backoff for reconnections, and built-in **Rate Limit (HTTP 429)** handling with `Retry-After`.
 
 ## 🏗 Architecture & Logic
 
 ### Internal Validation & Normalization
+
 The library ensures data integrity at several layers:
+
 1.  **Serialization Stability**: RXON uses a **JSON Round-trip** mechanism with `orjson` to normalize all numeric types (`10.0` -> `10`), coerce dictionary keys to strings, and sort keys. This ensures that the same object always produces the exact same HMAC hash regardless of minor formatting differences.
 2.  **Full Type Support**: Native support for `datetime`, `UUID`, `Enum`, and **Pydantic** models ensures seamless integration with modern Python ecosystems while maintaining cryptographic consistency.
 3.  **Recursion Protection**: All recursive operations are limited to a depth of 100 to prevent stack overflow or DoS attacks via malicious payloads.
 4.  **Schema Enforcement**: Before task execution, the library validates input parameters against the skill's JSON Schema, checking for required fields, type correctness, and allowed enum values.
 
 ### Smart Matching Logic
+
 RXON formalizes the rules for matching tasks to holons:
+
 1.  **Hardware Matching**: Compares `HardwareDevice` properties. If a task requires `vram_gb: 16`, it will match any device with `vram_gb >= 16`.
 2.  **Resource Properties**: Generic resources (like RAM or CPU cores) are matched via the `properties` dictionary using the same GE logic.
 3.  **Capability Intersection**: If a task accepts multiple environments (e.g., `["linux", "darwin"]`), a worker with `linux` will be correctly matched.
@@ -47,6 +50,7 @@ RXON formalizes the rules for matching tasks to holons:
 ## 🧪 Quick Start
 
 ### Worker Side (PULL)
+
 ```python
 from rxon import create_transport
 from rxon.models import Resources, HardwareDevice
@@ -67,6 +71,7 @@ if my_res.matches(req):
 ```
 
 ### Orchestrator Side (Server)
+
 ```python
 from aiohttp import web
 from rxon import HttpListener
@@ -91,4 +96,5 @@ await listener.start(handler=my_handler)
 The project is distributed under the Mozilla Public License 2.0 (MPL 2.0).
 
 ---
-*Mantra: "The RXON is the medium for the Ghost."*
+
+_Mantra: "The RXON is the medium for the Ghost."_

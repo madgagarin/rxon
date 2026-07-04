@@ -331,7 +331,7 @@ async def test_network_timeout(server: tuple[str, dict[str, Any], HttpListener])
     await transport.connect()
     try:
         # poll_task uses its own timeout, but we test a quick heartbeat
-        with pytest.raises(Exception):  # Should be RxonNetworkError/TimeoutError
+        with pytest.raises(TimeoutError):
             await asyncio.wait_for(transport.send_heartbeat(Heartbeat("worker-timeout", "idle")), timeout=0.1)
     finally:
         await transport.close()

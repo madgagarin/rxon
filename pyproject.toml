@@ -23,6 +23,9 @@ classifiers = [
 dependencies = [
     "aiohttp>=3.14.0",
     "orjson>=3.11.0",
+    "msgspec>=0.18.0",
+    "fastjsonschema>=2.19.0",
+    "cryptography>=42.0.0",
 ]
 
 [project.urls]
@@ -37,7 +40,7 @@ line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "TID", "PLC"]
+select = ["E", "W", "F", "I", "B", "A", "SIM", "C4", "PLC", "UP", "TID"]
 ignore = []
 
 [tool.ruff.lint.isort]

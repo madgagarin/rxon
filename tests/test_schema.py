@@ -1,11 +1,7 @@
-# Copyright (c) 2025-2026 Dmitrii Gagarin aka madgagarin
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
-from dataclasses import dataclass
 from enum import Enum
-from typing import Any, NamedTuple
+from typing import Any
+
+import msgspec
 
 from rxon.schema import (
     extract_json_schema,
@@ -15,21 +11,19 @@ from rxon.schema import (
 )
 
 
-@dataclass
-class SimpleConfig:
+class SimpleConfig(msgspec.Struct):
     enabled: bool
     retry_count: int = 3
     api_key: str | None = None
 
 
-@dataclass
-class NestedConfig:
+class NestedConfig(msgspec.Struct):
     name: str
     config: SimpleConfig
     tags: list[str]
 
 
-class NTConfig(NamedTuple):
+class NTConfig(msgspec.Struct):
     name: str
     port: int = 8080
     debug: bool | None = None
@@ -59,7 +53,7 @@ def test_extract_json_schema_union() -> None:
     assert {"type": "string"} in schema["anyOf"]
 
 
-def test_extract_json_schema_dataclass() -> None:
+def test_extract_json_schema_struct() -> None:
     schema = extract_json_schema(SimpleConfig)
     assert schema is not None
     assert schema["type"] == "object"
@@ -69,7 +63,7 @@ def test_extract_json_schema_dataclass() -> None:
     assert "retry_count" not in schema["required"]
 
 
-def test_extract_json_schema_namedtuple() -> None:
+def test_extract_json_schema_struct2() -> None:
     schema = extract_json_schema(NTConfig)
     assert schema is not None
     assert schema["type"] == "object"

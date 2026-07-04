@@ -157,12 +157,12 @@ class HttpTransport(Transport):
                                 details["code"] = data["code"]
                             error_msg = data.get("error") if isinstance(data, dict) else await resp.text()
                             raise RxonRateLimitError(error_msg or "Rate limit exceeded", details=details)
-                        except (ContentTypeError, ValueError):
+                        except (ContentTypeError, ValueError) as e:
                             text = await resp.text()
                             details = {"status": resp.status}
                             if retry_seconds is not None:
                                 details["retry_after"] = max(0.0, retry_seconds)
-                            raise RxonRateLimitError(f"Rate limit exceeded (429): {text}", details=details)
+                            raise RxonRateLimitError(f"Rate limit exceeded (429): {text}", details=details) from e
 
                     if resp.status >= 400:
                         text = await resp.text()

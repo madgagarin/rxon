@@ -8,6 +8,8 @@ from pathlib import Path
 from ssl import CERT_OPTIONAL, CERT_REQUIRED, Purpose, SSLContext, create_default_context
 from typing import Any, cast
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519
 from orjson import OPT_SORT_KEYS, dumps
 
 from .utils import to_dict
@@ -18,6 +20,12 @@ __all__ = [
     "extract_cert_identity",
     "sign_payload",
     "verify_signature",
+    "sign_payload_ed25519",
+    "verify_signature_ed25519",
+    "sign_bubbling_chain",
+    "verify_bubbling_chain_signature",
+    "sign_bubbling_chain_hmac",
+    "verify_bubbling_chain_hmac",
 ]
 
 
@@ -49,6 +57,109 @@ def verify_signature(payload: Any, signature: str, secret: str, ignore_fields: l
         return False
     expected_signature = sign_payload(payload, secret, ignore_fields=ignore_fields)
     return compare_digest(expected_signature, signature)
+
+
+def sign_payload_ed25519(payload: Any, private_key_pem: str, ignore_fields: list[str] | None = None) -> str:
+    """
+    Signs a payload using Ed25519.
+    :param payload: Data to sign (Model, dict, or list)
+    :param private_key_pem: PEM-encoded private key
+    :param ignore_fields: List of top-level fields to exclude from signing (e.g., 'security')
+    """
+    if not private_key_pem:
+        raise ValueError("Private key for signing cannot be empty.")
+
+    data = to_dict(payload)
+    if isinstance(data, dict):
+        data = dict(data)
+        data.pop("security", None)
+        if ignore_fields:
+            for field in ignore_fields:
+                data.pop(field, None)
+
+    message = dumps(data, option=OPT_SORT_KEYS)
+
+    private_key = serialization.load_pem_private_key(private_key_pem.encode("utf-8"), password=None)
+    if not isinstance(private_key, ed25519.Ed25519PrivateKey):
+        raise TypeError("Key is not an Ed25519 private key.")
+
+    signature = private_key.sign(message)
+    return signature.hex()
+
+
+def verify_signature_ed25519(
+    payload: Any, signature_hex: str, public_key_pem: str, ignore_fields: list[str] | None = None
+) -> bool:
+    """Verifies the Ed25519 signature of a payload."""
+    if not signature_hex or not public_key_pem:
+        return False
+
+    data = to_dict(payload)
+    if isinstance(data, dict):
+        data = dict(data)
+        data.pop("security", None)
+        if ignore_fields:
+            for field in ignore_fields:
+                data.pop(field, None)
+
+    message = dumps(data, option=OPT_SORT_KEYS)
+
+    try:
+        public_key = serialization.load_pem_public_key(public_key_pem.encode("utf-8"))
+        if not isinstance(public_key, ed25519.Ed25519PublicKey):
+            return False
+        public_key.verify(bytes.fromhex(signature_hex), message)
+        return True
+    except Exception:
+        return False
+
+
+def sign_bubbling_chain(bubbling_chain: list[str], private_key_pem: str) -> str:
+    """Signs the bubbling chain using Ed25519."""
+    if not private_key_pem:
+        raise ValueError("Private key cannot be empty.")
+
+    message = dumps(bubbling_chain, option=OPT_SORT_KEYS)
+
+    private_key = serialization.load_pem_private_key(private_key_pem.encode("utf-8"), password=None)
+    if not isinstance(private_key, ed25519.Ed25519PrivateKey):
+        raise TypeError("Key is not an Ed25519 private key.")
+
+    signature = private_key.sign(message)
+    return signature.hex()
+
+
+def verify_bubbling_chain_signature(bubbling_chain: list[str], signature_hex: str, public_key_pem: str) -> bool:
+    """Verifies the Ed25519 signature of the bubbling chain."""
+    if not signature_hex or not public_key_pem:
+        return False
+
+    message = dumps(bubbling_chain, option=OPT_SORT_KEYS)
+
+    try:
+        public_key = serialization.load_pem_public_key(public_key_pem.encode("utf-8"))
+        if not isinstance(public_key, ed25519.Ed25519PublicKey):
+            return False
+        public_key.verify(bytes.fromhex(signature_hex), message)
+        return True
+    except Exception:
+        return False
+
+
+def sign_bubbling_chain_hmac(bubbling_chain: list[str], secret: str) -> str:
+    """Signs the bubbling chain using HMAC SHA256."""
+    if not secret:
+        raise ValueError("Secret cannot be empty.")
+    message = dumps(bubbling_chain, option=OPT_SORT_KEYS)
+    return new(secret.encode("utf-8"), message, sha256).hexdigest()
+
+
+def verify_bubbling_chain_hmac(bubbling_chain: list[str], signature: str, secret: str) -> bool:
+    """Verifies the HMAC SHA256 signature of the bubbling chain."""
+    if not signature or not secret:
+        return False
+    expected = sign_bubbling_chain_hmac(bubbling_chain, secret)
+    return compare_digest(expected, signature)
 
 
 def create_server_ssl_context(

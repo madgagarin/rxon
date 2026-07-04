@@ -3,10 +3,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from dataclasses import dataclass
-from typing import Any, NamedTuple
+from typing import Any
 
-from rxon.schema import validate_data
+import fastjsonschema
+import msgspec
+
+from rxon.schema import translate_error, validate_data
 
 __all__ = [
     "HardwareDevice",
@@ -29,7 +31,7 @@ __all__ = [
 ]
 
 
-class HardwareDevice(NamedTuple):
+class HardwareDevice(msgspec.Struct, omit_defaults=True, frozen=True):
     type: str
     model: str | None = None
     id: str | None = None
@@ -59,34 +61,37 @@ class HardwareDevice(NamedTuple):
             if isinstance(req_v, (int, float)) and isinstance(my_v, (int, float)):
                 if my_v < req_v:
                     return False
-            elif isinstance(req_v, list):
-                if isinstance(my_v, list):
-                    if not any(v in req_v for v in my_v):
+            elif isinstance(req_v, (frozenset, set, list)):
+                req_set = req_v if isinstance(req_v, (frozenset, set)) else set(req_v)
+                if isinstance(my_v, (frozenset, set, list)):
+                    my_set = my_v if isinstance(my_v, (frozenset, set)) else set(my_v)
+                    if not (my_set & req_set):
                         return False
-                elif my_v not in req_v:
+                elif my_v not in req_set:
                     return False
-            elif isinstance(my_v, list):
-                if req_v not in my_v:
+            elif isinstance(my_v, (frozenset, set, list)):
+                my_set = my_v if isinstance(my_v, (frozenset, set)) else set(my_v)
+                if req_v not in my_set:
                     return False
             elif my_v != req_v:
                 return False
         return True
 
 
-class DeviceUsage(NamedTuple):
+class DeviceUsage(msgspec.Struct, omit_defaults=True, frozen=True):
     unit_id: str
     load_percent: float
     metrics: dict[str, Any] | None = None
 
 
-class ResourcesUsage(NamedTuple):
+class ResourcesUsage(msgspec.Struct, omit_defaults=True, frozen=True):
     cpu_load_percent: float = 0.0
     ram_used_gb: float = 0.0
     devices_usage: list[DeviceUsage] | None = None
 
 
-class Resources(NamedTuple):
-    devices: list["HardwareDevice"] | None = None
+class Resources(msgspec.Struct, omit_defaults=True, frozen=True):
+    devices: list[HardwareDevice] | None = None
     properties: dict[str, Any] | None = None
 
     def matches(self, req: "Resources") -> bool:
@@ -112,21 +117,24 @@ class Resources(NamedTuple):
                 if isinstance(req_v, (int, float)) and isinstance(my_v, (int, float)):
                     if my_v < req_v:
                         return False
-                elif isinstance(req_v, list):
-                    if isinstance(my_v, list):
-                        if not any(v in req_v for v in my_v):
+                elif isinstance(req_v, (frozenset, set, list)):
+                    req_set = req_v if isinstance(req_v, (frozenset, set)) else set(req_v)
+                    if isinstance(my_v, (frozenset, set, list)):
+                        my_set = my_v if isinstance(my_v, (frozenset, set)) else set(my_v)
+                        if not (my_set & req_set):
                             return False
-                    elif my_v not in req_v:
+                    elif my_v not in req_set:
                         return False
-                elif isinstance(my_v, list):
-                    if req_v not in my_v:
+                elif isinstance(my_v, (frozenset, set, list)):
+                    my_set = my_v if isinstance(my_v, (frozenset, set)) else set(my_v)
+                    if req_v not in my_set:
                         return False
                 elif my_v != req_v:
                     return False
         return True
 
 
-class InstalledArtifact(NamedTuple):
+class InstalledArtifact(msgspec.Struct, omit_defaults=True, frozen=True):
     name: str
     version: str = "unknown"
     type: str | None = None
@@ -150,22 +158,24 @@ class InstalledArtifact(NamedTuple):
             if isinstance(req_v, (int, float)) and isinstance(my_v, (int, float)):
                 if my_v < req_v:
                     return False
-            elif isinstance(req_v, list):
-                if isinstance(my_v, list):
-                    if not any(v in req_v for v in my_v):
+            elif isinstance(req_v, (frozenset, set, list)):
+                req_set = req_v if isinstance(req_v, (frozenset, set)) else set(req_v)
+                if isinstance(my_v, (frozenset, set, list)):
+                    my_set = my_v if isinstance(my_v, (frozenset, set)) else set(my_v)
+                    if not (my_set & req_set):
                         return False
-                elif my_v not in req_v:
+                elif my_v not in req_set:
                     return False
-            elif isinstance(my_v, list):
-                if req_v not in my_v:
+            elif isinstance(my_v, (frozenset, set, list)):
+                my_set = my_v if isinstance(my_v, (frozenset, set)) else set(my_v)
+                if req_v not in my_set:
                     return False
             elif my_v != req_v:
                 return False
         return True
 
 
-@dataclass(frozen=True, slots=True)
-class SkillInfo:
+class SkillInfo(msgspec.Struct, omit_defaults=True, frozen=True):
     name: str
     type: str | None = None
     description: str | None = None
@@ -176,6 +186,30 @@ class SkillInfo:
     output_statuses: list[str] | None = None
     schema_dialect: str = "json-schema"
     properties: dict[str, Any] | None = None
+    _input_validator: Any = None
+    _output_validator: Any = None
+
+    @property
+    def input_validator(self) -> Any:
+        val = getattr(self, "_input_validator", None)
+        if val is None and self.input_schema:
+            try:
+                val = fastjsonschema.compile(self.input_schema)
+                object.__setattr__(self, "_input_validator", val)
+            except Exception:
+                pass
+        return val
+
+    @property
+    def output_validator(self) -> Any:
+        val = getattr(self, "_output_validator", None)
+        if val is None and self.output_schema:
+            try:
+                val = fastjsonschema.compile(self.output_schema)
+                object.__setattr__(self, "_output_validator", val)
+            except Exception:
+                pass
+        return val
 
     def matches(self, req: "SkillInfo") -> bool:
         """Checks if this skill meets the requirements."""
@@ -183,9 +217,7 @@ class SkillInfo:
             return False
         if req.type is not None and self.type != req.type:
             return False
-        if req.version is not None and self.version != req.version:
-            return False
-        return True
+        return req.version is None or self.version == req.version
 
     def __lt__(self, other: Any) -> bool:
         if not isinstance(other, SkillInfo):
@@ -193,7 +225,7 @@ class SkillInfo:
         return self.name < other.name
 
 
-class SecurityContext(NamedTuple):
+class SecurityContext(msgspec.Struct, omit_defaults=True, frozen=True):
     """Security metadata for Zero Trust identity and verification."""
 
     signature: str | None = None
@@ -202,7 +234,7 @@ class SecurityContext(NamedTuple):
     metadata: dict[str, Any] | None = None
 
 
-class WorkerCapabilities(NamedTuple):
+class WorkerCapabilities(msgspec.Struct, omit_defaults=True, frozen=True):
     hostname: str = "unknown"
     ip_address: str = "0.0.0.0"
     cost_per_skill: dict[str, float] | None = None
@@ -210,14 +242,20 @@ class WorkerCapabilities(NamedTuple):
     extra: dict[str, Any] | None = None
 
 
-class FileMetadata(NamedTuple):
+class FileMetadata(msgspec.Struct, omit_defaults=True, frozen=True):
     uri: str
     size: int = 0
     etag: str | None = None
     metadata: dict[str, Any] | None = None
 
 
-class WorkerRegistration(NamedTuple):
+# TODO: Extract domain-specific models to external packages:
+# - rxon-media (ImageMetadata, AudioMetadata, TensorMetadata)
+# - rxon-robotics (RoboticJointState, RoboticLinkState, RoboticsTelemetry)
+# - rxon-ai (AI agent state models, decision trees, prompt context models)
+
+
+class WorkerRegistration(msgspec.Struct, omit_defaults=True, frozen=True):
     worker_id: str
     worker_type: str = "generic"
     supported_skills: list[SkillInfo] | None = None
@@ -233,7 +271,7 @@ class WorkerRegistration(NamedTuple):
     timestamp: int | None = None
 
 
-class TokenResponse(NamedTuple):
+class TokenResponse(msgspec.Struct, omit_defaults=True, frozen=True):
     access_token: str
     expires_in: int
     worker_id: str
@@ -241,7 +279,7 @@ class TokenResponse(NamedTuple):
     metadata: dict[str, Any] | None = None
 
 
-class WorkerEventPayload(NamedTuple):
+class WorkerEventPayload(msgspec.Struct, omit_defaults=True, frozen=True):
     event_id: str
     worker_id: str
     origin_worker_id: str
@@ -258,7 +296,7 @@ class WorkerEventPayload(NamedTuple):
     metadata: dict[str, Any] | None = None
 
 
-class WorkerCommand(NamedTuple):
+class WorkerCommand(msgspec.Struct, omit_defaults=True, frozen=True):
     command: str
     task_id: str | None = None
     job_id: str | None = None
@@ -266,7 +304,7 @@ class WorkerCommand(NamedTuple):
     metadata: dict[str, Any] | None = None
 
 
-class TaskPayload(NamedTuple):
+class TaskPayload(msgspec.Struct, omit_defaults=True, frozen=True):
     job_id: str
     task_id: str
     type: str
@@ -284,19 +322,25 @@ class TaskPayload(NamedTuple):
         Validates task params against the skill's input schema.
         Returns (is_valid, error_message).
         """
-        if not skill.input_schema:
-            return True, None
+        validator = skill.input_validator
+        if validator is not None:
+            try:
+                validator(self.params)
+                return True, None
+            except Exception as e:
+                msg = getattr(e, "message", str(e))
+                return False, translate_error(msg, self.params)
 
         return validate_data(self.params, skill.input_schema)
 
 
-class TaskError(NamedTuple):
+class TaskError(msgspec.Struct, omit_defaults=True, frozen=True):
     code: str
     message: str
     details: dict[str, Any] | None = None
 
 
-class TaskResult(NamedTuple):
+class TaskResult(msgspec.Struct, omit_defaults=True, frozen=True):
     job_id: str
     task_id: str
     worker_id: str | None = None
@@ -310,7 +354,7 @@ class TaskResult(NamedTuple):
     timestamp: int | None = None
 
 
-class Heartbeat(NamedTuple):
+class Heartbeat(msgspec.Struct, omit_defaults=True, frozen=True):
     worker_id: str
     status: str
     usage: ResourcesUsage | None = None

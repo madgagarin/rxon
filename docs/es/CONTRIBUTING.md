@@ -15,12 +15,13 @@ Al ser la capa de protocolo compartida, los cambios aquí afectan a todo el ecos
 ## Pruebas
 
 Ejecute las pruebas para asegurar la integridad del protocolo:
+
 ```bash
 pytest tests/
 ```
 
 ## Guías
 
--   **Cambios Críticos**: Cualquier cambio en `rxon.models` es potencialmente un cambio crítico. Consulte con los mantenedores antes de enviarlo.
--   **Dependencias**: Mantenga el núcleo libre de dependencias. El código de red debe ir en `rxon.transports`.
--   **Tipado**: El tipado estático es estrictamente requerido para todos los modelos del protocolo.
+- **Cambios Críticos**: Cualquier cambio en `rxon.models` es potencialmente un cambio crítico. Consulte con los mantenedores antes de enviarlo.
+- **Dependencias**: Mantenga el núcleo libre de dependencias. El código de red debe ir en `rxon.transports`.
+- **Tipado**: El tipado estático es estrictamente requerido para todos los modelos del protocolo.

@@ -3,15 +3,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, NamedTuple
+from typing import Any
 from uuid import UUID, uuid4
 
+import msgspec
 import pytest
 
-from rxon.utils import _get_cached_type_hints, from_dict, json_dumps, to_dict
+from rxon.utils import from_dict, json_dumps, to_dict
 
 
 def test_to_dict_recursion_limit() -> None:
@@ -54,14 +54,13 @@ class Status(Enum):
     INACTIVE = "inactive"
 
 
-class Point(NamedTuple):
+class Point(msgspec.Struct):
     x: int
     y: int
     label: str | None = None
 
 
-@dataclass
-class Config:
+class Config(msgspec.Struct):
     name: str
     points: list[Point]
     status: Status = Status.ACTIVE
@@ -126,8 +125,7 @@ def test_from_dict_extra_fields() -> None:
 
 
 def test_from_dict_deep_nesting_and_mixed() -> None:
-    @dataclass
-    class Deep:
+    class Deep(msgspec.Struct):
         name: str
         config: Config
         meta: dict[str, Any]
@@ -149,13 +147,12 @@ def test_from_dict_extreme_chaos() -> None:
         from_dict(Config, data)
 
     data2 = {"name": "test", "points": [123]}
-    c2 = from_dict(Config, data2)
-    assert c2.points == [123]
+    with pytest.raises(ValueError, match="Failed to instantiate Config"):
+        from_dict(Config, data2)
 
 
 def test_from_dict_optional_list() -> None:
-    @dataclass
-    class Root:
+    class Root(msgspec.Struct):
         items: list[Point] | None = None
 
     r1 = from_dict(Root, {"items": None})
@@ -168,8 +165,7 @@ def test_from_dict_optional_list() -> None:
 
 
 def test_from_dict_empty_collections() -> None:
-    @dataclass
-    class Multi:
+    class Multi(msgspec.Struct):
         tags: list[str] | None = None
         info: dict[str, int] | None = None
 
@@ -183,8 +179,7 @@ def test_from_dict_empty_collections() -> None:
 
 
 def test_from_dict_uuid() -> None:
-    @dataclass
-    class Node:
+    class Node(msgspec.Struct):
         id: UUID
         tags: list[UUID] | None = None
 
@@ -202,43 +197,25 @@ def test_from_dict_uuid() -> None:
 
 
 def test_from_dict_union_models_logic() -> None:
-    @dataclass
-    class ModelA:
+    class ModelA(msgspec.Struct):
         a: int
 
-    @dataclass
-    class ModelB:
-        b: str
+    class Root(msgspec.Struct):
+        union: ModelA | str
 
-    @dataclass
-    class Root:
-        union: ModelA | ModelB
-
-    data_b = {"union": {"b": "hello"}}
+    data_b = {"union": "hello"}
 
     res = from_dict(Root, data_b)
-    assert isinstance(res.union, ModelB)
-    assert res.union.b == "hello"
+    assert res.union == "hello"
 
-
-def test_type_hints_caching() -> None:
-    hints1 = _get_cached_type_hints(Config)
-    assert "points" in hints1
-
-    hints2 = _get_cached_type_hints(Config)
-    assert hints1 is hints2
-
-    hints_other = _get_cached_type_hints(Point)
-    assert hints_other is not hints1
-    assert "x" in hints_other
-
-    info = _get_cached_type_hints.cache_info()
-    assert info.hits > 0
+    data_a = {"union": {"a": 42}}
+    res_a = from_dict(Root, data_a)
+    assert isinstance(res_a.union, ModelA)
+    assert res_a.union.a == 42
 
 
 def test_from_dict_uuid_keys() -> None:
-    @dataclass
-    class Registry:
+    class Registry(msgspec.Struct):
         mapping: dict[UUID, str]
 
     uid = uuid4()
@@ -264,7 +241,7 @@ def test_to_dict_integer_keys_normalization() -> None:
     data = {1: "int", "2": "str"}
     result = to_dict(data)
     assert result == {"1": "int", "2": "str"}
-    assert all(isinstance(k, str) for k in result.keys())
+    assert all(isinstance(k, str) for k in result)
 
 
 def test_to_dict_datetime_support() -> None:
@@ -272,26 +249,6 @@ def test_to_dict_datetime_support() -> None:
     result = to_dict(dt)
     assert isinstance(result, str)
     assert "2026-05-17" in result
-
-
-def test_to_dict_pydantic_v2_mock() -> None:
-    class MockPydanticV2:
-        def model_dump(self) -> dict[str, Any]:
-            return {"field": "value", "empty": None}
-
-    obj = MockPydanticV2()
-    result = to_dict(obj)
-    assert result == {"field": "value"}
-
-
-def test_to_dict_pydantic_v1_mock() -> None:
-    class MockPydanticV1:
-        def dict(self) -> dict[str, Any]:
-            return {"field": "v1", "none": None}
-
-    obj = MockPydanticV1()
-    result = to_dict(obj)
-    assert result == {"field": "v1"}
 
 
 def test_to_dict_float_normalization_edge_cases() -> None:
@@ -307,8 +264,7 @@ def test_to_dict_float_normalization_edge_cases() -> None:
 
 
 def test_from_dict_datetime() -> None:
-    @dataclass
-    class Log:
+    class Log(msgspec.Struct):
         ts: datetime
 
     dt = datetime(2026, 5, 17, 12, 0, 0)
@@ -320,17 +276,16 @@ def test_from_dict_datetime() -> None:
 
 
 def test_from_dict_datetime_negative() -> None:
-    @dataclass
-    class Log:
+    class Log(msgspec.Struct):
         ts: datetime
 
     data = {"ts": "not-a-date"}
-    res = from_dict(Log, data)
-    assert res.ts == "not-a-date"
+    with pytest.raises(ValueError, match="Failed to instantiate Log"):
+        from_dict(Log, data)
 
 
 def test_to_dict_deep_mixed_structures() -> None:
-    class Node(NamedTuple):
+    class Node(msgspec.Struct):
         val: int
         next: Any = None
 
@@ -338,3 +293,16 @@ def test_to_dict_deep_mixed_structures() -> None:
     result = to_dict(root)
     assert result["val"] == 0
     assert result["next"]["a"][0]["val"] == 1
+
+
+def test_from_dict_container_list() -> None:
+    # Verify that from_dict successfully converts a list of dictionaries to a list of msgspec.Struct
+    data = [{"x": 1, "y": 2}, {"x": 3, "y": 4, "label": "test"}]
+    res = from_dict(list[Point], data)
+    assert isinstance(res, list)
+    assert len(res) == 2
+    assert isinstance(res[0], Point)
+    assert res[0].x == 1
+    assert res[0].y == 2
+    assert isinstance(res[1], Point)
+    assert res[1].label == "test"

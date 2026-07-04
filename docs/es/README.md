@@ -16,29 +16,33 @@ En las redes tradicionales, los comandos suelen fluir "de arriba hacia abajo" (m
 
 ## ✨ Características Principales
 
--   **Conexión Inversa (PULL)**: Los nodos se conectan al orquestador para obtener tareas, asegurando la compatibilidad con entornos de red complejos (NAT/Firewalls).
--   **Seguridad Zero Trust**: Firma de carga útil a través de HMAC-SHA256 con verificación en tiempo constante. Soporte para cadenas de identidad y extracción de identidad de certificados mTLS.
--   **Restauración Profunda de Modelos**: Utilidad `from_dict` robusta que restaura recursivamente tipos complejos de Python (`NamedTuple`, `dataclass`, `Enum`, `UUID`) a partir de diccionarios, soportando estructuras anidadas y tipos `Union`.
--   **Serialización Segura**: Utilidad `to_dict` que elimina recursivamente los valores `None` para reducir el tamaño y normaliza los valores `float` (ej. `1.0` -> `1`), asegurando la estabilidad de los hashes criptográficos.
--   **Validación Automatizada de Contratos**: Motor JSON Schema integrado que infiere automáticamente los esquemas a partir de los tipos de Python y valida los parámetros de `TaskPayload` contra los contratos de `SkillInfo`.
--   **Coincidencia de Recursos Avanzada**: Lógica matemática para la asignación de recursos:
-    *   **Números**: Utiliza la lógica **GE (Greater or Equal)** (Requisito <= Disponible).
-    *   **Listas**: Utiliza la lógica de **Inclusión** (valor en la lista) o **Intersección** (cualquier elemento común).
-    *   **Cadenas**: Coincidencia parcial de modelos de hardware sin distinción de mayúsculas y minúsculas.
--   **Telemetría Universal**: Los heartbeats incluyen métricas detalladas para cualquier dispositivo personalizado (sensores, GPUs, actuadores) y propiedades del sistema genéricas a través del modelo extensible `HardwareDevice`.
--   **Transporte Resiliente**: Implementación HTTP/WebSocket con Secure Token Service (STS) que soporta **Refresh Tokens**, backoff exponencial para reconexiones y manejo nativo de **Rate Limit (HTTP 429)** con soporte para `Retry-After`.
+- **Conexión Inversa (PULL)**: Los nodos se conectan al orquestador para obtener tareas, asegurando la compatibilidad con entornos de red complejos (NAT/Firewalls).
+- **Seguridad Zero Trust**: Firma de carga útil a través de HMAC-SHA256 (simétrico) y Ed25519 (firmas digitales asimétricas) con verificación en tiempo constante. Soporte para bubbling chains firmadas y extracción de identidad de certificados mTLS.
+- **Restauración Profunda de Modelos**: Utilidad `from_dict` robusta potenciada por `msgspec.convert` que restaura recursivamente tipos complejos de Python (`msgspec.Struct`, `Enum`, `UUID`, `datetime`) a partir de diccionarios, soportando estructuras anidadas y tipos `Union`.
+- **Serialización Segura**: Utilidad `to_dict` que elimina recursivamente los valores `None` para reducir el tamaño y normaliza los valores `float` (ej. `1.0` -> `1`), asegurando la estabilidad de los hashes criptográficos.
+- **Validación Automatizada de Contratos**: Motor JSON Schema integrado que infiere automáticamente los esquemas a partir de los tipos de Python y valida los parámetros de `TaskPayload` contra los contratos de `SkillInfo`.
+- **Coincidencia de Recursos Avanzada**: Lógica matemática para la asignación de recursos:
+  - **Números**: Utiliza la lógica **GE (Greater or Equal)** (Requisito <= Disponible).
+  - **Listas**: Utiliza la lógica de **Inclusión** (valor en la lista) o **Intersección** (cualquier elemento común).
+  - **Cadenas**: Coincidencia parcial de modelos de hardware sin distinción de mayúsculas y minúsculas.
+- **Telemetría Universal**: Los heartbeats incluyen métricas detalladas para cualquier dispositivo personalizado (sensores, GPUs, actuadores) y propiedades del sistema genéricas a través del modelo extensible `HardwareDevice`.
+- **Transporte Resiliente**: Implementación HTTP/WebSocket con Secure Token Service (STS) que soporta **Refresh Tokens**, backoff exponencial para reconexiones y manejo nativo de **Rate Limit (HTTP 429)** con soporte para `Retry-After`.
 
 ## 🏗 Arquitectura y Lógica
 
 ### Validación y Normalización Interna
+
 La biblioteca garantiza la integridad de los datos en varios niveles:
+
 1.  **Estabilidad de Serialización**: RXON utiliza un mecanismo de **JSON Round-trip** con `orjson` para normalizar todos los tipos numéricos (`10.0` -> `10`), forzar las claves de los diccionarios a cadenas y ordenar las claves. Esto asegura que el mismo objeto siempre produzca exactamente el mismo hash HMAC independientemente de pequeñas diferencias de formato.
 2.  **Soporte Completo de Tipos**: El soporte nativo para `datetime`, `UUID`, `Enum` y modelos **Pydantic** asegura una integración fluida con los ecosistemas modernos de Python manteniendo la consistencia criptográfica.
 3.  **Protección de Recurrencia**: Todas las operaciones recursivas están limitadas a una profundidad de 100 para evitar el desbordamiento de pila o ataques DoS a través de datos maliciosos.
 4.  **Cumplimiento de Esquemas**: Antes de la ejecución de la tarea, la biblioteca valida los parámetros de entrada contra el JSON Schema de la habilidad, verificando los campos obligatorios, la corrección de tipos y los valores permitidos (Enums).
 
 ### Lógica de Coincidencia Inteligente (Smart Matching)
+
 RXON formaliza las reglas para emparejar tareas con holones:
+
 1.  **Coincidencia de Hardware**: Compara las propiedades de `HardwareDevice`. Si una tarea requiere `vram_gb: 16`, coincidirá con cualquier dispositivo con `vram_gb >= 16`.
 2.  **Propiedades de Recursos**: Los recursos genéricos (como la RAM o los núcleos de CPU) se comparan a través del diccionario `properties` utilizando la misma lógica GE.
 3.  **Intersección de Capacidades**: Si una tarea acepta múltiples entornos (ej. `["linux", "darwin"]`), un trabajador con `linux` coincidirá correctamente.
@@ -46,14 +50,16 @@ RXON formaliza las reglas para emparejar tareas con holones:
 ## 🛡️ Manejo de Errores
 
 RXON define un conjunto de códigos de error estandarizados para asegurar un comportamiento consistente:
--   `CONTRACT_VIOLATION_ERROR`: Los datos no coinciden con el esquema negociado.
--   `SECURITY_ERROR`: Error de autenticación o verificación de firma.
--   `RESOURCE_EXHAUSTED_ERROR`: Recursos físicos insuficientes (RAM, VRAM).
--   `DEPENDENCY_ERROR`: Un servicio o artefacto requerido no está disponible.
+
+- `CONTRACT_VIOLATION_ERROR`: Los datos no coinciden con el esquema negociado.
+- `SECURITY_ERROR`: Error de autenticación o verificación de firma.
+- `RESOURCE_EXHAUSTED_ERROR`: Recursos físicos insuficientes (RAM, VRAM).
+- `DEPENDENCY_ERROR`: Un servicio o artefacto requerido no está disponible.
 
 ## 🧪 Inicio Rápido
 
 ### Lado del Trabajador (PULL)
+
 ```python
 from rxon import create_transport
 from rxon.models import Resources, HardwareDevice
@@ -74,6 +80,7 @@ if my_res.matches(req):
 ```
 
 ### Lado del Orquestador (Servidor)
+
 ```python
 from aiohttp import web
 from rxon import HttpListener
@@ -98,4 +105,5 @@ await listener.start(handler=my_handler)
 El proyecto se distribuye bajo la licencia Mozilla Public License 2.0 (MPL 2.0).
 
 ---
-*Mantra: "The RXON is the medium for the Ghost."*
+
+_Mantra: "The RXON is the medium for the Ghost."_
