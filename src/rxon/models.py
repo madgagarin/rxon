@@ -249,12 +249,6 @@ class FileMetadata(msgspec.Struct, omit_defaults=True, frozen=True):
     metadata: dict[str, Any] | None = None
 
 
-# TODO: Extract domain-specific models to external packages:
-# - rxon-media (ImageMetadata, AudioMetadata, TensorMetadata)
-# - rxon-robotics (RoboticJointState, RoboticLinkState, RoboticsTelemetry)
-# - rxon-ai (AI agent state models, decision trees, prompt context models)
-
-
 class WorkerRegistration(msgspec.Struct, omit_defaults=True, frozen=True):
     worker_id: str
     worker_type: str = "generic"
@@ -316,6 +310,11 @@ class TaskPayload(msgspec.Struct, omit_defaults=True, frozen=True):
     security: SecurityContext | None = None
     metadata: dict[str, Any] | None = None
     timestamp: int | None = None
+    policy: dict[str, Any] | None = None
+    sig: str | None = None
+    step: int = 0
+    depth: int = 0
+    parent_hash: str | None = None
 
     def validate_params(self, skill: SkillInfo) -> tuple[bool, str | None]:
         """
@@ -352,6 +351,7 @@ class TaskResult(msgspec.Struct, omit_defaults=True, frozen=True):
     security: SecurityContext | None = None
     metadata: dict[str, Any] | None = None
     timestamp: int | None = None
+    costs: dict[str, Any] | None = None
 
 
 class Heartbeat(msgspec.Struct, omit_defaults=True, frozen=True):

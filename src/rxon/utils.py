@@ -34,7 +34,10 @@ def to_dict(obj: Any, _depth: int = 0) -> Any:
 
     def default_handler(o: Any) -> Any:
         if isinstance(o, msgspec.Struct):
-            return {k: v for k, v in msgspec.to_builtins(o).items() if not k.startswith("_")}
+            try:
+                return {k: v for k, v in msgspec.to_builtins(o).items() if not k.startswith("_")}
+            except Exception:
+                return str(o)
         if isinstance(o, Enum):
             return o.value
         if isinstance(o, (UUID, datetime)):

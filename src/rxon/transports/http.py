@@ -122,7 +122,7 @@ class HttpTransport(Transport):
                     method, url, params=params, json=json, headers=headers, timeout=timeout
                 ) as resp:
                     v = resp.headers.get(PROTOCOL_VERSION_HEADER)
-                    if v and v != PROTOCOL_VERSION and not self._version_warning_logged:
+                    if v and v != PROTOCOL_VERSION and not getattr(self, "_version_warning_logged", False):
                         logger.warning(f"RXON Protocol Version Mismatch! Orchestrator: {v}, Worker: {PROTOCOL_VERSION}")
                         self._version_warning_logged = True
 

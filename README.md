@@ -17,7 +17,8 @@ In traditional networks, commands usually flow "top-down" (Push model). In **RXO
 ## ✨ Key Features
 
 - **Reverse Connection (PULL)**: Nodes connect to the orchestrator to pull tasks, ensuring compatibility with complex network environments (NAT/Firewalls).
-- **Zero Trust Security**: Payload signing via HMAC-SHA256 (symmetric) and Ed25519 (asymmetric digital signatures) with constant-time verification. Support for signed bubbling chains and mTLS certificate identity extraction.
+- **Zero Trust Security**: Payload signing via HMAC-SHA256 (symmetric) and Ed25519 (asymmetric digital signatures) with constant-time verification. Support for signed bubbling chains, mTLS certificate identity extraction, and `sig` (`orchestrator_signature`) task verification.
+- **Policy & Cost Headers**: Built-in support for job policy constraints (`policy`), holarchy depth tracking (`depth`), transition step counters (`step`), parent hash linkage (`parent_hash`), and task execution cost reporting (`costs`).
 - **Deep Model Restoration**: Robust `from_dict` utility powered by `msgspec.convert` that recursively restores complex Python types (msgspec.Structs, Enums, UUIDs, datetimes) from raw dictionaries, supporting nested structures and `Union` types.
 - **Secure Serialization**: `to_dict` utility that recursively strips `None` values to reduce payload size and normalizes `float` values (e.g., `1.0` -> `1`) to ensure stable cryptographic hashes.
 - **Automated Contract Validation**: Built-in JSON Schema engine that automatically infers schemas from Python types and validates `TaskPayload` parameters against `SkillInfo` contracts.
@@ -46,6 +47,15 @@ RXON formalizes the rules for matching tasks to holons:
 1.  **Hardware Matching**: Compares `HardwareDevice` properties. If a task requires `vram_gb: 16`, it will match any device with `vram_gb >= 16`.
 2.  **Resource Properties**: Generic resources (like RAM or CPU cores) are matched via the `properties` dictionary using the same GE logic.
 3.  **Capability Intersection**: If a task accepts multiple environments (e.g., `["linux", "darwin"]`), a worker with `linux` will be correctly matched.
+
+### Policy, Holarchy & Cost Tracking
+
+RXON standardizes execution governance and metric tracking across distributed holons:
+
+- **Policy Constraints (`policy`)**: Dict carrying execution constraints (e.g. allowed skills, token limits, budget caps).
+- **Holarchy & Step Counters (`depth`, `step`, `parent_hash`)**: Track call nesting depth (`depth`), state transition index (`step`), and parent event cryptographic link (`parent_hash`).
+- **Signature (`sig`)**: Cryptographic signature of the task payload from the orchestrator.
+- **Execution Cost Reporting (`costs`)**: `TaskResult.costs` field reporting consumed tokens, computational duration, or financial metrics (e.g. `{"tokens": 1500, "usd": 0.02}`).
 
 ## 🧪 Quick Start
 

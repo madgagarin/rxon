@@ -17,7 +17,8 @@ En las redes tradicionales, los comandos suelen fluir "de arriba hacia abajo" (m
 ## ✨ Características Principales
 
 - **Conexión Inversa (PULL)**: Los nodos se conectan al orquestador para obtener tareas, asegurando la compatibilidad con entornos de red complejos (NAT/Firewalls).
-- **Seguridad Zero Trust**: Firma de carga útil a través de HMAC-SHA256 (simétrico) y Ed25519 (firmas digitales asimétricas) con verificación en tiempo constante. Soporte para bubbling chains firmadas y extracción de identidad de certificados mTLS.
+- **Seguridad Zero Trust**: Firma de carga útil a través de HMAC-SHA256 (simétrico) y Ed25519 (firmas digitales asimétricas) con verificación en tiempo constante. Soporte para bubbling chains firmadas, extracción de identidad de certificados mTLS y verificación de firma digital de tareas `sig` (`orchestrator_signature`).
+- **Encabezados de Políticas y Costos**: Soporte integrado para restricciones de políticas de trabajo (`policy`), seguimiento de profundidad de holarquía (`depth`), contadores de pasos de transición (`step`), vinculación de hash primario (`parent_hash`) e informes de costos de ejecución de tareas (`costs`).
 - **Restauración Profunda de Modelos**: Utilidad `from_dict` robusta potenciada por `msgspec.convert` que restaura recursivamente tipos complejos de Python (`msgspec.Struct`, `Enum`, `UUID`, `datetime`) a partir de diccionarios, soportando estructuras anidadas y tipos `Union`.
 - **Serialización Segura**: Utilidad `to_dict` que elimina recursivamente los valores `None` para reducir el tamaño y normaliza los valores `float` (ej. `1.0` -> `1`), asegurando la estabilidad de los hashes criptográficos.
 - **Validación Automatizada de Contratos**: Motor JSON Schema integrado que infiere automáticamente los esquemas a partir de los tipos de Python y valida los parámetros de `TaskPayload` contra los contratos de `SkillInfo`.
@@ -46,6 +47,15 @@ RXON formaliza las reglas para emparejar tareas con holones:
 1.  **Coincidencia de Hardware**: Compara las propiedades de `HardwareDevice`. Si una tarea requiere `vram_gb: 16`, coincidirá con cualquier dispositivo con `vram_gb >= 16`.
 2.  **Propiedades de Recursos**: Los recursos genéricos (como la RAM o los núcleos de CPU) se comparan a través del diccionario `properties` utilizando la misma lógica GE.
 3.  **Intersección de Capacidades**: Si una tarea acepta múltiples entornos (ej. `["linux", "darwin"]`), un trabajador con `linux` coincidirá correctamente.
+
+### Seguimiento de Políticas, Holarquía y Costos
+
+RXON estandariza la gobernanza de ejecución y el seguimiento de métricas en holones distribuidos:
+
+- **Restricciones de Política (`policy`)**: Diccionario que contiene reglas de ejecución (habilidades permitidas, límites de tokens, presupuesto).
+- **Contadores de Holarquía y Pasos (`depth`, `step`, `parent_hash`)**: Seguimiento de la profundidad de anidamiento (`depth`), índice de paso de transición (`step`) y enlace criptográfico con el evento primario (`parent_hash`).
+- **Firma de Tarea (`sig`)**: Firma criptográfica de la tarea proveniente del orquestador.
+- **Informe de Costos (`costs`)**: Campo `TaskResult.costs` para reportar métricas de recursos consumidos (tokens, costo en USD, tiempo de CPU/GPU, por ejemplo `{"tokens": 1500, "usd": 0.02}`).
 
 ## 🛡️ Manejo de Errores
 
