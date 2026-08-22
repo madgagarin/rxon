@@ -20,7 +20,6 @@ def create_transport(
     Currently supports: http://, https://, mock://
     """
     if url.startswith(("http://", "https://", "ws://", "wss://")):
-        # HttpTransport handles ws/wss internally by converting the scheme
         base_url = url
         if url.startswith("ws"):
             base_url = url.replace("ws", "http", 1)

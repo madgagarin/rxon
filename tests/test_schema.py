@@ -6,7 +6,7 @@
 from enum import Enum
 from typing import Any
 
-import msgspec
+from msgspec import Struct
 
 from rxon.schema import (
     extract_json_schema,
@@ -16,19 +16,19 @@ from rxon.schema import (
 )
 
 
-class SimpleConfig(msgspec.Struct):
+class SimpleConfig(Struct):
     enabled: bool
     retry_count: int = 3
     api_key: str | None = None
 
 
-class NestedConfig(msgspec.Struct):
+class NestedConfig(Struct):
     name: str
     config: SimpleConfig
     tags: list[str]
 
 
-class NTConfig(msgspec.Struct):
+class NTConfig(Struct):
     name: str
     port: int = 8080
     debug: bool | None = None

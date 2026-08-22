@@ -6,7 +6,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 [![PyPI version](https://img.shields.io/pypi/v/rxon.svg)](https://pypi.org/project/rxon/)
 
-**RXON** (Reverse Axon) — это легковесный расширяемый протокол обратного соединения, разработанный для архитектур **[HLN (Hierarchical Logic Network)](https://github.com/avtomatika-ai/hln)**.
+**RXON** (Reverse Axon) — это легковесный расширяемый протокол обратного соединения, разработанный для архитектур **[HLN (Holarchical Logic Network)](https://github.com/madgagarin/hln)**.
 
 Он служит «нервной системой» для распределенных мультиагентных систем, предоставляя строго типизированный фундамент Zero Trust для межсервисного взаимодействия.
 
@@ -28,6 +28,14 @@
   - **Строки**: Частичное совпадение моделей оборудования без учета регистра.
 - **Универсальная телеметрия**: Хартбиты включают детальные метрики для любых кастомных устройств (датчики, GPU, приводы) и общие системные свойства через расширяемую модель `HardwareDevice`.
 - **Отказоустойчивый транспорт**: Реализация HTTP/WebSocket с Secure Token Service (STS) поддержкой **Refresh Tokens**, экспоненциальным backoff при переподключениях и встроенной обработкой **Rate Limit (HTTP 429)** с поддержкой `Retry-After`.
+
+## 🌐 Экосистема
+
+RXON является базовым протоколом для стека распределенной мультиагентной автоматизации:
+
+- **[HLN (Holarchical Logic Network)](https://github.com/madgagarin/hln)**: Архитектурный паттерн, манифест и спецификация иерархических сетей (холархий).
+- **[Avtomatika](https://github.com/avtomatika-ai/avtomatika)**: Высокопроизводительный оркестратор на базе конечных автоматов для распределенных AI-пайплайнов.
+- **[Avtomatika Worker SDK](https://github.com/avtomatika-ai/avtomatika-worker)**: Официальный Python SDK для разработки воркеров (холонов), подключающихся к оркестратору по протоколу RXON.
 
 ## 🏗 Архитектура и Логика
 
@@ -80,7 +88,7 @@ transport = create_transport("ws://api.hln.local", "worker-01", "secret-token")
 # 2. Определение ресурсов воркера
 my_res = Resources(
     properties={"ram_gb": 64, "cpu_cores": 16},
-    devices=[HardwareDevice(type="gpu", model="RTX 4090", properties={"vram_gb": 24})]
+    devices=[HardwareDevice(type="gpu", model="RTX 4090", properties={"vram_gb": 24})],
 )
 
 # 3. Логика сопоставления (Требование: GPU минимум 16GB VRAM)
@@ -101,10 +109,12 @@ listener = HttpListener(app)
 # ОБЯЗАТЕЛЬНО: Регистрация маршрутов RXON до запуска приложения
 listener.setup_routes()
 
+
 async def my_handler(action, payload, context):
     if action == "poll":
         return {"job_id": "j-1", "task_id": "t-1", "type": "echo"}
     return {"status": "ok"}
+
 
 # Запуск прослушивания
 await listener.start(handler=my_handler)

@@ -3,13 +3,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import pytest
+from pytest import mark
 
 from rxon.models import Heartbeat, Resources, TaskPayload, TaskResult, WorkerCommand, WorkerRegistration
 from rxon.testing import MockTransport
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_mock_transport_full_flow() -> None:
     transport = MockTransport(worker_id="test-worker")
     await transport.connect()

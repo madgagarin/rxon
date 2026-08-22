@@ -5,7 +5,7 @@
 
 from typing import Any
 
-import pytest
+from pytest import mark, raises
 
 from rxon.blob import BlobProvider, calculate_config_hash, parse_uri
 from rxon.models import FileMetadata
@@ -43,15 +43,15 @@ def test_parse_uri_relative() -> None:
 
 
 def test_parse_uri_negative() -> None:
-    with pytest.raises(ValueError, match="without a default bucket"):
+    with raises(ValueError, match="without a default bucket"):
         parse_uri("some/path")
 
-    with pytest.raises(ValueError):
+    with raises(ValueError):
         parse_uri("http://wrong-scheme.com/file")
 
 
 def test_parse_uri_empty() -> None:
-    with pytest.raises(ValueError):
+    with raises(ValueError):
         parse_uri("", default_bucket=None)
 
 
@@ -72,9 +72,8 @@ class MockBlobProvider(BlobProvider):
         return True
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_blob_provider_interface() -> None:
-    # This is mainly to ensure the ABC can be subclassed with new methods
     provider = MockBlobProvider()
     assert await provider.delete("s3://b/f") is True
     assert await provider.delete_dir("s3://b/d/") is True

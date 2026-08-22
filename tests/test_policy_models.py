@@ -5,8 +5,8 @@
 
 from unittest.mock import MagicMock, patch
 
-import msgspec
-import pytest
+from msgspec import Struct
+from pytest import raises
 
 from rxon.models import TaskPayload, TaskResult
 from rxon.utils import from_dict, to_dict
@@ -42,7 +42,6 @@ def test_task_payload_policy_headers_happy_path() -> None:
 
 
 def test_task_payload_policy_headers_defaults_and_edge_cases() -> None:
-    # Test default values when policy/signature omitted
     payload_default = TaskPayload(job_id="j1", task_id="t1", type="s1")
     assert payload_default.policy is None
     assert payload_default.sig is None
@@ -50,7 +49,6 @@ def test_task_payload_policy_headers_defaults_and_edge_cases() -> None:
     assert payload_default.depth == 0
     assert payload_default.parent_hash is None
 
-    # Test empty policy dict and large depth boundary
     payload_boundary = TaskPayload(
         job_id="j2",
         task_id="t2",
@@ -75,24 +73,22 @@ def test_task_payload_policy_headers_defaults_and_edge_cases() -> None:
 
 
 def test_task_payload_policy_headers_negative_cases() -> None:
-    # Passing invalid type for step (e.g., string instead of int) should raise ValueError in from_dict
     invalid_dict = {
         "job_id": "j1",
         "task_id": "t1",
         "type": "s1",
         "step": "invalid_number",
     }
-    with pytest.raises(ValueError, match="Failed to instantiate TaskPayload"):
+    with raises(ValueError, match="Failed to instantiate TaskPayload"):
         from_dict(TaskPayload, invalid_dict)
 
-    # Passing invalid type for policy (e.g., list instead of dict)
     invalid_policy_dict = {
         "job_id": "j1",
         "task_id": "t1",
         "type": "s1",
         "policy": ["not", "a", "dict"],
     }
-    with pytest.raises(ValueError, match="Failed to instantiate TaskPayload"):
+    with raises(ValueError, match="Failed to instantiate TaskPayload"):
         from_dict(TaskPayload, invalid_policy_dict)
 
 
@@ -111,25 +107,22 @@ def test_task_result_costs_happy_path_and_edge_cases() -> None:
     restored = from_dict(TaskResult, data_dict)
     assert restored.costs == {"tokens": 1500, "usd": 0.02, "integer_float": 1}
 
-    # Default None costs
     result_none = TaskResult(job_id="j1", task_id="t1")
     assert result_none.costs is None
 
 
 def test_task_result_costs_negative_cases() -> None:
-    # Passing invalid type for costs (e.g., integer instead of dict)
     invalid_costs = {
         "job_id": "j1",
         "task_id": "t1",
         "costs": 12345,
     }
-    with pytest.raises(ValueError, match="Failed to instantiate TaskResult"):
+    with raises(ValueError, match="Failed to instantiate TaskResult"):
         from_dict(TaskResult, invalid_costs)
 
 
 def test_utils_to_dict_fallback_handler() -> None:
-    # Create a mock object that simulates a msgspec.Struct throwing an Exception in to_builtins
-    mock_struct = MagicMock(spec=msgspec.Struct)
+    mock_struct = MagicMock(spec=Struct)
 
     with (
         patch("msgspec.to_builtins", side_effect=RuntimeError("Mock struct error")),

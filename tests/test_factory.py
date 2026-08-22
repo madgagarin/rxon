@@ -5,7 +5,7 @@
 
 from typing import cast
 
-import pytest
+from pytest import raises
 
 from rxon.transports.factory import create_transport
 from rxon.transports.http import HttpTransport
@@ -22,6 +22,6 @@ def test_create_transport_https() -> None:
 
 
 def test_create_transport_invalid_scheme() -> None:
-    with pytest.raises(ValueError) as exc:
+    with raises(ValueError) as exc:
         create_transport("ftp://localhost", "worker-1", "token")
     assert "Unsupported transport scheme" in str(exc.value)

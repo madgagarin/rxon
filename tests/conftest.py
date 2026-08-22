@@ -3,11 +3,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import logging
+from logging import INFO, basicConfig
 
-import pytest
+from pytest import fixture
 
 
-@pytest.fixture(autouse=True)
+@fixture(autouse=True)
 def setup_logging() -> None:
-    logging.basicConfig(level=logging.INFO)
+    basicConfig(level=INFO)

@@ -6,7 +6,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 [![PyPI version](https://img.shields.io/pypi/v/rxon.svg)](https://pypi.org/project/rxon/)
 
-**RXON** (Reverse Axon) is a lightweight, extensible reverse-connection protocol designed for **[HLN (Hierarchical Logic Network)](https://github.com/avtomatika-ai/hln)** architectures.
+**RXON** (Reverse Axon) is a lightweight, extensible reverse-connection protocol designed for **[HLN (Holarchical Logic Network)](https://github.com/madgagarin/hln)** architectures.
 
 It serves as the "nervous system" for distributed multi-agent systems, providing a strictly typed, Zero Trust foundation for inter-service communication.
 
@@ -28,6 +28,14 @@ In traditional networks, commands usually flow "top-down" (Push model). In **RXO
   - **Strings**: Case-insensitive partial matching for hardware models.
 - **Unified Telemetry**: Heartbeats include granular metrics for any custom devices (Sensors, GPUs, Actuators) and generic system properties via the extensible `HardwareDevice` model.
 - **Resilient Transport**: HTTP/WebSocket implementation with Secure Token Service (STS) supporting **Refresh Tokens**, exponential backoff for reconnections, and built-in **Rate Limit (HTTP 429)** handling with `Retry-After`.
+
+## 🌐 Ecosystem
+
+RXON is the foundational protocol powering the distributed multi-agent automation stack:
+
+- **[HLN (Holarchical Logic Network)](https://github.com/madgagarin/hln)**: The architectural pattern, manifesto, and design specification for self-similar holarchies.
+- **[Avtomatika](https://github.com/avtomatika-ai/avtomatika)**: High-performance state-machine based orchestrator for long-running AI workflows and distributed execution.
+- **[Avtomatika Worker SDK](https://github.com/avtomatika-ai/avtomatika-worker)**: The official Python SDK for building autonomous workers (Holons) that connect to orchestrators via RXON.
 
 ## 🏗 Architecture & Logic
 
@@ -71,7 +79,7 @@ transport = create_transport("ws://api.hln.local", "worker-01", "secret-token")
 # 2. Define worker resources
 my_res = Resources(
     properties={"ram_gb": 64, "cpu_cores": 16},
-    devices=[HardwareDevice(type="gpu", model="RTX 4090", properties={"vram_gb": 24})]
+    devices=[HardwareDevice(type="gpu", model="RTX 4090", properties={"vram_gb": 24})],
 )
 
 # 3. Smart Matching Logic (Requirement: GPU with at least 16GB VRAM)
@@ -92,10 +100,12 @@ listener = HttpListener(app)
 # MANDATORY: Register RXON routes before app startup
 listener.setup_routes()
 
+
 async def my_handler(action, payload, context):
     if action == "poll":
         return {"job_id": "j-1", "task_id": "t-1", "type": "echo"}
     return {"status": "ok"}
+
 
 # Start listening
 await listener.start(handler=my_handler)

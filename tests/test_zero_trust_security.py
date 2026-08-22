@@ -3,9 +3,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import time
+from time import time
 
-import pytest
+from pytest import raises
 
 from rxon.models import (
     Heartbeat,
@@ -39,9 +39,9 @@ def test_sign_and_verify_payload_basic() -> None:
 
 def test_sign_payload_negative() -> None:
     """Test that signing with empty secret fails."""
-    with pytest.raises(ValueError, match="Secret key for signing cannot be empty"):
+    with raises(ValueError, match="Secret key for signing cannot be empty"):
         sign_payload({"foo": "bar"}, "")
-    with pytest.raises(ValueError):
+    with raises(ValueError):
         sign_payload({"foo": "bar"}, None)  # type: ignore
 
 
@@ -73,10 +73,8 @@ def test_sign_payload_with_ignore_fields() -> None:
     payload = {"worker_id": "w1", "status": "active", "temp_field": "ignore-me"}
     secret = "secret"
 
-    # Sign ignoring temp_field
     sig_ignored = sign_payload(payload, secret, ignore_fields=["temp_field"])
 
-    # Sign a payload that doesn't have the field at all
     payload_clean = {"worker_id": "w1", "status": "active"}
     sig_clean = sign_payload(payload_clean, secret)
 
@@ -97,7 +95,7 @@ def test_sign_payload_auto_ignores_security() -> None:
 
 def test_worker_registration_zero_trust_fields() -> None:
     """Test WorkerRegistration handles timestamp and security fields."""
-    ts = int(time.time())
+    ts = int(time())
     security = SecurityContext(signature="test-sig", signer_id="worker-1")
     reg = WorkerRegistration(worker_id="worker-1", worker_type="test", timestamp=ts, security=security)
 
@@ -115,7 +113,7 @@ def test_worker_registration_zero_trust_fields() -> None:
 
 def test_task_result_zero_trust_fields() -> None:
     """Test TaskResult handles timestamp and security fields."""
-    ts = int(time.time())
+    ts = int(time())
     security = SecurityContext(signature="test-sig", signer_id="worker-1")
     res = TaskResult(job_id="j1", task_id="t1", worker_id="worker-1", status="success", timestamp=ts, security=security)
 
@@ -131,7 +129,7 @@ def test_task_result_zero_trust_fields() -> None:
 
 def test_heartbeat_zero_trust_fields() -> None:
     """Test Heartbeat handles timestamp and security fields."""
-    ts = int(time.time())
+    ts = int(time())
     security = SecurityContext(signature="test-sig", signer_id="worker-1")
     hb = Heartbeat(worker_id="worker-1", status="ready", timestamp=ts, security=security)
 
@@ -147,7 +145,7 @@ def test_heartbeat_zero_trust_fields() -> None:
 
 def test_worker_event_payload_zero_trust_fields() -> None:
     """Test WorkerEventPayload handles timestamp and security fields."""
-    ts = int(time.time())
+    ts = int(time())
     security = SecurityContext(signature="test-sig", signer_id="worker-1")
     event = WorkerEventPayload(
         event_id="e1",

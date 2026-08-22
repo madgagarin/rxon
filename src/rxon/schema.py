@@ -5,18 +5,21 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from enum import Enum
+from re import match as re_match
+from re import sub as re_sub
 from threading import Lock
 from types import UnionType
 from typing import Any, Union, get_args, get_origin, get_type_hints
 from uuid import UUID
 
-import fastjsonschema
-import msgspec
-import orjson
+from fastjsonschema import JsonSchemaValueException
+from fastjsonschema import compile as compile_schema
+from msgspec import NODEFAULT, Struct
 from msgspec.structs import fields as msgspec_fields
+from orjson import OPT_SORT_KEYS
+from orjson import dumps as orjson_dumps
 
 
 def extract_json_schema(
@@ -32,14 +35,14 @@ def extract_json_schema(
         if custom_schema is not None:
             return custom_schema
 
-    if isinstance(schema_type, type) and issubclass(schema_type, msgspec.Struct):
+    if isinstance(schema_type, type) and issubclass(schema_type, Struct):
         properties = {}
         required = []
         for field_info in msgspec_fields(schema_type):
             if field_info.name.startswith("_"):
                 continue
             properties[field_info.name] = _python_type_to_json_schema(field_info.type)
-            if field_info.default is msgspec.NODEFAULT and not _is_optional(field_info.type):
+            if field_info.default is NODEFAULT and not _is_optional(field_info.type):
                 required.append(field_info.name)
         return {
             "type": "object",
@@ -97,26 +100,22 @@ def _python_type_to_json_schema(tp: Any) -> dict[str, Any]:
     if origin is dict or tp is dict:
         return {"type": "object"}
 
-    if isinstance(tp, type) and issubclass(tp, msgspec.Struct):
+    if isinstance(tp, type) and issubclass(tp, Struct):
         nested = extract_json_schema(tp)
         return nested if nested else {"type": "object"}
 
     return {"type": "string"}
 
 
-_validators_cache: dict[bytes, Any] = {}
-_cache_lock = Lock()
-
-
-def _get_val_by_path(data: Any, path_str: str) -> Any:
-    if not path_str:
+def _get_val_by_path(data: Any, path: str) -> Any:
+    if not path:
         return data
-    parts = path_str.split(".")
+    parts = path.split(".")
     curr = data
     for p in parts:
         if isinstance(curr, dict) and p in curr:
             curr = curr[p]
-        elif isinstance(curr, (list, tuple)) and p.isdigit():
+        elif isinstance(curr, list) and p.isdigit() and int(p) < len(curr):
             curr = curr[int(p)]
         else:
             return None
@@ -124,14 +123,12 @@ def _get_val_by_path(data: Any, path_str: str) -> Any:
 
 
 def translate_error(msg: str, data: Any) -> str:
-    # Normalize index brackets e.g. data.tags[1] -> data.tags.1
-    msg = re.sub(r"\[(\d+)\]", r".\1", msg)
+    msg = re_sub(r"\[(\d+)\]", r".\1", msg)
 
     if "cannot be validated by any definition" in msg or "anyOf" in msg:
         return "Value does not match any schemas"
 
-    # enum failure
-    m = re.match(r"data(\.(.*)|) must be one of (.*)", msg)
+    m = re_match(r"data(\.(.*)|) must be one of (.*)", msg)
     if m:
         _, path, enum_list = m.groups()
         val = _get_val_by_path(data, path)
@@ -141,8 +138,7 @@ def translate_error(msg: str, data: Any) -> str:
             prefix = "".join(f"Field '{p}': " for p in parts)
         return f"{prefix}Value '{val}' is not allowed. Must be one of: {enum_list}"
 
-    # Missing required field
-    m = re.match(r"data(.*) must contain \[(.*)\]", msg)
+    m = re_match(r"data(.*) must contain \[(.*)\]", msg)
     if m:
         path, field = m.groups()
         field_name = field.strip("'\"")
@@ -153,8 +149,7 @@ def translate_error(msg: str, data: Any) -> str:
                 prefix = "".join(f"Field '{p}': " for p in parts)
         return f"{prefix}Missing required field: '{field_name}'"
 
-    # Unexpected field
-    m = re.match(r"data(.*) must not contain \{(.*)\} properties", msg)
+    m = re_match(r"data(.*) must not contain \{(.*)\} properties", msg)
     if m:
         path, field = m.groups()
         field_name = field.strip("'\"")
@@ -165,15 +160,13 @@ def translate_error(msg: str, data: Any) -> str:
                 prefix = "".join(f"Field '{p}': " for p in parts)
         return f"{prefix}Unexpected field: '{field_name}'"
 
-    # Type/value mismatch (with path)
-    m = re.match(r"data\.(.*) must be (.*)", msg)
+    m = re_match(r"data\.(.*) must be (.*)", msg)
     if m:
         path, expected = m.groups()
         parts = path.split(".")
         prefix = "".join(f"Field '{p}': " for p in parts[:-1])
         last_field = parts[-1]
 
-        # Check if list index
         if last_field.isdigit():
             if len(parts) >= 2:
                 array_field = parts[-2]
@@ -187,8 +180,7 @@ def translate_error(msg: str, data: Any) -> str:
             return f"{prefix}Field '{last_field}': Expected {expected}, got null"
         return f"{prefix}Field '{last_field}': Expected {expected}"
 
-    # Type/value mismatch (top level, no path)
-    m = re.match(r"data must be (.*)", msg)
+    m = re_match(r"data must be (.*)", msg)
     if m:
         expected = m.group(1)
         if data is None:
@@ -198,18 +190,24 @@ def translate_error(msg: str, data: Any) -> str:
     return msg
 
 
+_validators_cache: dict[bytes, Any] = {}
+_cache_lock = Lock()
+
+
 def validate_data(data: Any, schema: dict[str, Any] | None) -> tuple[bool, str | None]:
     if schema is None or not schema:
         return True, None
 
-    schema_key = orjson.dumps(schema, option=orjson.OPT_SORT_KEYS)
+    schema_key = orjson_dumps(schema, option=OPT_SORT_KEYS)
     validator = _validators_cache.get(schema_key)
     if not validator:
         with _cache_lock:
             validator = _validators_cache.get(schema_key)
             if not validator:
                 try:
-                    validator = fastjsonschema.compile(schema)
+                    validator = compile_schema(schema)
+                    if len(_validators_cache) >= 1024:
+                        _validators_cache.pop(next(iter(_validators_cache)))
                     _validators_cache[schema_key] = validator
                 except Exception as e:
                     return False, f"Failed to compile schema: {e}"
@@ -217,7 +215,7 @@ def validate_data(data: Any, schema: dict[str, Any] | None) -> tuple[bool, str |
     try:
         validator(data)
         return True, None
-    except fastjsonschema.JsonSchemaValueException as e:
+    except JsonSchemaValueException as e:
         return False, translate_error(e.message, data)
     except Exception as e:
         return False, str(e)

@@ -9,7 +9,7 @@ from hashlib import sha256
 from typing import Any
 from uuid import UUID
 
-import msgspec
+from msgspec import DecodeError, Struct, ValidationError, convert, to_builtins
 from orjson import OPT_NON_STR_KEYS, OPT_SORT_KEYS, dumps, loads
 
 __all__ = [
@@ -33,9 +33,9 @@ def to_dict(obj: Any, _depth: int = 0) -> Any:
         return None
 
     def default_handler(o: Any) -> Any:
-        if isinstance(o, msgspec.Struct):
+        if isinstance(o, Struct):
             try:
-                return {k: v for k, v in msgspec.to_builtins(o).items() if not k.startswith("_")}
+                return {k: v for k, v in to_builtins(o).items() if not k.startswith("_")}
             except Exception:
                 return str(o)
         if isinstance(o, Enum):
@@ -45,7 +45,6 @@ def to_dict(obj: Any, _depth: int = 0) -> Any:
         return str(o)
 
     try:
-        # Round-trip through JSON ensures stable sorting and normalization for signing
         json_bytes = dumps(obj, default=default_handler, option=OPT_SORT_KEYS | OPT_NON_STR_KEYS)
     except TypeError as e:
         if "Recursion limit reached" in str(e):
@@ -80,12 +79,12 @@ def from_dict(cls: Any, data: Any) -> Any:
     except TypeError:
         pass
 
-    if isinstance(cls, type) and issubclass(cls, msgspec.Struct) and not isinstance(data, dict):
+    if isinstance(cls, type) and issubclass(cls, Struct) and not isinstance(data, dict):
         return data
 
     try:
-        return msgspec.convert(data, cls)
-    except Exception as e:
+        return convert(data, cls)
+    except (ValidationError, DecodeError, TypeError, KeyError, ValueError) as e:
         raise ValueError(f"Failed to instantiate {cls.__name__ if hasattr(cls, '__name__') else str(cls)}: {e}") from e
 
 

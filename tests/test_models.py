@@ -18,24 +18,19 @@ from rxon.utils import from_dict, to_dict
 
 
 def test_skill_info_matches_edge_cases() -> None:
-    # Base skill
     skill = SkillInfo(name="echo", type="service", version="1.0.0")
 
-    # Positive: partial requirements
     assert skill.matches(SkillInfo(name="echo"))
     assert skill.matches(SkillInfo(name="echo", type=None, version=None))
 
-    # Negative: empty strings vs None
     assert not skill.matches(SkillInfo(name=""))
     assert not skill.matches(SkillInfo(name="echo", type=""))
 
-    # Worker with incomplete data match check
     skill_incomplete = SkillInfo(name="echo")
     assert not skill_incomplete.matches(SkillInfo(name="echo", version="1.0.0"))
 
 
 def test_task_payload_validation_advanced() -> None:
-    # Nested schema with complex types
     skill = SkillInfo(
         name="process",
         input_schema={
@@ -45,27 +40,22 @@ def test_task_payload_validation_advanced() -> None:
         },
     )
 
-    # Valid
     assert TaskPayload("j", "t", "p", {"count": 1}).validate_params(skill)[0] is True
 
-    # Invalid: type mismatch (float instead of int)
     is_valid, err = TaskPayload("j", "t", "p", {"count": 1.5}).validate_params(skill)
     assert is_valid is False
     assert err is not None and "Expected integer" in err
 
-    # Invalid: array item type mismatch
     is_valid, err = TaskPayload("j", "t", "p", {"count": 5, "tags": [1, "2"]}).validate_params(skill)
     assert is_valid is False
     assert err is not None and "Expected string" in err
 
-    # Invalid: params=None for object schema
     skill_optional = SkillInfo(name="opt", input_schema={"type": "object"})
     assert TaskPayload("j", "t", "p", None).validate_params(skill_optional)[0] is False
     assert TaskPayload("j", "t", "p", {}).validate_params(skill_optional)[0] is True
 
 
 def test_task_payload_validation_no_params() -> None:
-    # Case: missing required field
     skill = SkillInfo(name="echo", input_schema={"type": "object", "required": ["msg"]})
     task = TaskPayload(job_id="j1", task_id="t1", type="echo", params=None)
 
@@ -89,7 +79,6 @@ def test_worker_event_traceability() -> None:
 
 
 def test_task_payload_deadline_int() -> None:
-    # Testing integer deadline for Beta 10
     task = TaskPayload(job_id="j1", task_id="t1", type="echo", deadline=1713456789)
     assert isinstance(task.deadline, int)
     d = to_dict(task)

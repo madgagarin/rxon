@@ -28,6 +28,15 @@ dependencies = [
     "cryptography>=42.0.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "mypy~=2.3.0",
+    "pytest~=9.0.3",
+    "pytest-asyncio~=1.3.0",
+    "pytest-cov~=7.1.0",
+    "ruff",
+]
+
 [project.urls]
 Homepage = "https://github.com/madgagarin/rxon"
 Repository = "https://github.com/madgagarin/rxon"
@@ -41,21 +50,12 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "A", "SIM", "C4", "PLC", "UP", "TID"]
-ignore = []
 
 [tool.ruff.lint.isort]
 known-first-party = ["rxon"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "parents"
-
-[tool.ruff.lint.flake8-tidy-imports.banned-api]
-"avtomatika".msg = "Use 'from <module> import <name>' style instead of full import."
-"avtomatika_worker".msg = "Use 'from <module> import <name>' style instead of full import."
-"matryoshka".msg = "Use 'from <module> import <name>' style instead of full import."
-
-[tool.ruff.lint.pyupgrade]
-keep-runtime-typing = false
 
 [tool.mypy]
 python_version = "3.11"
@@ -64,16 +64,7 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [
-    "test_blob",
-    "test_factory",
-    "test_integration",
-    "test_matching",
-    "test_models",
-    "test_schema",
-    "test_testing",
-    "test_utils",
-    "test_validators",
-    "test_zero_trust_security",
+    "tests.*",
     "conftest"
 ]
 disallow_untyped_decorators = false
@@ -81,11 +72,3 @@ disallow_untyped_decorators = false
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-
-[dependency-groups]
-dev = [
-    "mypy~=2.3.0",
-    "pytest~=9.0.3",
-    "pytest-asyncio~=1.3.0",
-    "pytest-cov~=7.1.0",
-]

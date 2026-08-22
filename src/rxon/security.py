@@ -41,8 +41,9 @@ def sign_payload(payload: Any, secret: str, ignore_fields: list[str] | None = No
 
     data = to_dict(payload)
     if isinstance(data, dict):
-        data = dict(data)  # Shallow copy to avoid modifying original
+        data = dict(data)
         data.pop("security", None)
+        data.pop("_signature", None)
         if ignore_fields:
             for field in ignore_fields:
                 data.pop(field, None)
@@ -73,13 +74,20 @@ def sign_payload_ed25519(payload: Any, private_key_pem: str, ignore_fields: list
     if isinstance(data, dict):
         data = dict(data)
         data.pop("security", None)
+        data.pop("_signature", None)
         if ignore_fields:
             for field in ignore_fields:
                 data.pop(field, None)
 
     message = dumps(data, option=OPT_SORT_KEYS)
 
-    private_key = serialization.load_pem_private_key(private_key_pem.encode("utf-8"), password=None)
+    try:
+        private_key = serialization.load_pem_private_key(private_key_pem.encode("utf-8"), password=None)
+    except TypeError as e:
+        raise TypeError(f"Failed to load Ed25519 private key (password-protected keys are not supported): {e}") from e
+    except Exception as e:
+        raise ValueError(f"Invalid private key: {e}") from e
+
     if not isinstance(private_key, ed25519.Ed25519PrivateKey):
         raise TypeError("Key is not an Ed25519 private key.")
 
@@ -98,6 +106,7 @@ def verify_signature_ed25519(
     if isinstance(data, dict):
         data = dict(data)
         data.pop("security", None)
+        data.pop("_signature", None)
         if ignore_fields:
             for field in ignore_fields:
                 data.pop(field, None)

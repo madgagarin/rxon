@@ -6,7 +6,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 [![PyPI version](https://img.shields.io/pypi/v/rxon.svg)](https://pypi.org/project/rxon/)
 
-**RXON** (Reverse Axon) es un protocolo de conexión inversa ligero y extensible diseñado para arquitecturas **[HLN (Hierarchical Logic Network)](https://github.com/avtomatika-ai/hln)**.
+**RXON** (Reverse Axon) es un protocolo de conexión inversa ligero y extensible diseñado para arquitecturas **[HLN (Holarchical Logic Network)](https://github.com/madgagarin/hln)**.
 
 Sirve como el "sistema nervioso" para sistemas multi-agente distribuidos, proporcionando una base Zero Trust estrictamente tipificada para la comunicación entre servicios.
 
@@ -28,6 +28,14 @@ En las redes tradicionales, los comandos suelen fluir "de arriba hacia abajo" (m
   - **Cadenas**: Coincidencia parcial de modelos de hardware sin distinción de mayúsculas y minúsculas.
 - **Telemetría Universal**: Los heartbeats incluyen métricas detalladas para cualquier dispositivo personalizado (sensores, GPUs, actuadores) y propiedades del sistema genéricas a través del modelo extensible `HardwareDevice`.
 - **Transporte Resiliente**: Implementación HTTP/WebSocket con Secure Token Service (STS) que soporta **Refresh Tokens**, backoff exponencial para reconexiones y manejo nativo de **Rate Limit (HTTP 429)** con soporte para `Retry-After`.
+
+## 🌐 Ecosistema
+
+RXON es el protocolo fundamental que impulsa la pila de automatización multi-agente distribuida:
+
+- **[HLN (Holarchical Logic Network)](https://github.com/madgagarin/hln)**: El patrón arquitectónico, manifiesto y especificación para holarquías autosimilares.
+- **[Avtomatika](https://github.com/avtomatika-ai/avtomatika)**: Motor orquestador basado en máquinas de estados de alto rendimiento para flujos de trabajo de IA distribuidos.
+- **[Avtomatika Worker SDK](https://github.com/avtomatika-ai/avtomatika-worker)**: SDK oficial de Python para construir trabajadores autónomos (holones) que se conectan a los orquestadores a través de RXON.
 
 ## 🏗 Arquitectura y Lógica
 
@@ -80,7 +88,7 @@ transport = create_transport("ws://api.hln.local", "worker-01", "secret-token")
 # 2. Definir recursos del trabajador
 my_res = Resources(
     properties={"ram_gb": 64, "cpu_cores": 16},
-    devices=[HardwareDevice(type="gpu", model="RTX 4090", properties={"vram_gb": 24})]
+    devices=[HardwareDevice(type="gpu", model="RTX 4090", properties={"vram_gb": 24})],
 )
 
 # 3. Lógica de coincidencia (Requisito: GPU con al menos 16GB VRAM)
@@ -101,10 +109,12 @@ listener = HttpListener(app)
 # OBLIGATORIO: Registrar rutas RXON antes del inicio de la aplicación
 listener.setup_routes()
 
+
 async def my_handler(action, payload, context):
     if action == "poll":
         return {"job_id": "j-1", "task_id": "t-1", "type": "echo"}
     return {"status": "ok"}
+
 
 # Iniciar escucha
 await listener.start(handler=my_handler)

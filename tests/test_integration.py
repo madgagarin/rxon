@@ -3,15 +3,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import asyncio
-import datetime
-import socket
+from asyncio import Event, sleep, wait_for
+from datetime import UTC, datetime, timedelta
 from logging import WARNING
+from socket import AF_INET, SOCK_STREAM, socket
 from typing import Any, cast
 from uuid import uuid4
 
-import pytest
-from aiohttp import ClientSession, WSMsgType, web
+from aiohttp import ClientSession, WSMsgType
+from aiohttp.web import Application, AppRunner, Request, Response, TCPSite, json_response
+from pytest import LogCaptureFixture, fail, fixture, mark, raises
 
 from rxon import HttpListener, create_transport
 from rxon.constants import (
@@ -38,20 +39,20 @@ from rxon.transports.http import HttpTransport
 from rxon.utils import to_dict
 
 
-@pytest.fixture
+@fixture
 def unused_tcp_port_factory() -> Any:
     def factory() -> int:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        with socket(AF_INET, SOCK_STREAM) as s:
             s.bind(("127.0.0.1", 0))
             return cast(int, s.getsockname()[1])
 
     return factory
 
 
-@pytest.fixture
+@fixture
 async def server(unused_tcp_port_factory: Any) -> Any:
     port = unused_tcp_port_factory()
-    app = web.Application()
+    app = Application()
     listener = HttpListener(app)
     state: dict[str, Any] = {"registered": [], "heartbeats": [], "results": [], "tasks_queue": []}
 
@@ -63,7 +64,6 @@ async def server(unused_tcp_port_factory: Any) -> Any:
             state["heartbeats"].append(payload)
             return {"status": "ok"}
         elif msg_type == "poll":
-            # Store query params for verification in tests
             raw_request = context.get("raw_request")
             state["last_poll_params"] = raw_request.query if raw_request else {}
             if state["tasks_queue"]:
@@ -77,9 +77,9 @@ async def server(unused_tcp_port_factory: Any) -> Any:
 
     listener.setup_routes()
     await listener.start(handler=mock_handler)
-    runner = web.AppRunner(app)
+    runner = AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "127.0.0.1", port)
+    site = TCPSite(runner, "127.0.0.1", port)
     await site.start()
     base_url = f"http://127.0.0.1:{port}"
 
@@ -88,7 +88,7 @@ async def server(unused_tcp_port_factory: Any) -> Any:
     await runner.cleanup()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_full_cycle(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, state, _ = server
     worker_id = "worker-test-01"
@@ -119,7 +119,7 @@ async def test_full_cycle(server: tuple[str, dict[str, Any], HttpListener]) -> N
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_heartbeat_hot_skills(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, state, _ = server
     worker_id = "worker-skills"
@@ -138,7 +138,7 @@ async def test_heartbeat_hot_skills(server: tuple[str, dict[str, Any], HttpListe
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_poll_task_with_skills_filtering(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, state, _ = server
     transport = create_transport(base_url, "w-poll", "token")
@@ -159,7 +159,7 @@ async def test_poll_task_with_skills_filtering(server: tuple[str, dict[str, Any]
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_auth_refresh_success(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, _, listener = server
 
@@ -167,7 +167,7 @@ async def test_auth_refresh_success(server: tuple[str, dict[str, Any], HttpListe
         if msg_type == "heartbeat":
             token = context.get("token")
             if token == "expired-token":
-                return web.Response(status=401, text="Token expired")
+                return Response(status=401, text="Token expired")
             return {"status": "ok"}
         if msg_type == "sts_token":
             return {"access_token": "valid-token", "expires_in": 300, "worker_id": "test"}
@@ -186,11 +186,11 @@ async def test_auth_refresh_success(server: tuple[str, dict[str, Any], HttpListe
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_websocket_flow(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, state, listener = server
     worker_id = "ws-worker"
-    progress_received = asyncio.Event()
+    progress_received = Event()
 
     async def ws_handler(msg_type: str, payload: Any, context: dict[str, Any]) -> Any:
         if msg_type == "websocket":
@@ -223,13 +223,13 @@ async def test_websocket_flow(server: tuple[str, dict[str, Any], HttpListener]) 
             payload={"progress": 0.5},
         )
         await transport.emit_event(prog_event)
-        await asyncio.wait_for(progress_received.wait(), timeout=2.0)
+        await wait_for(progress_received.wait(), timeout=2.0)
         assert len(state["results"]) == 1
     finally:
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_result_ignored(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, _, listener = server
 
@@ -248,18 +248,18 @@ async def test_result_ignored(server: tuple[str, dict[str, Any], HttpListener]) 
         await transport.close()
 
 
-@pytest.mark.asyncio
-async def test_protocol_version_mismatch(unused_tcp_port_factory: Any, caplog: pytest.LogCaptureFixture) -> None:
+@mark.asyncio
+async def test_protocol_version_mismatch(unused_tcp_port_factory: Any, caplog: LogCaptureFixture) -> None:
     port = unused_tcp_port_factory()
 
-    async def handler(request: web.Request) -> web.Response:
-        return web.json_response({"status": "ok"}, headers={PROTOCOL_VERSION_HEADER: "99.9.9"})
+    async def handler(request: Request) -> Response:
+        return json_response({"status": "ok"}, headers={PROTOCOL_VERSION_HEADER: "99.9.9"})
 
-    app = web.Application()
+    app = Application()
     app.router.add_post(ENDPOINT_WORKER_REGISTER, handler)
-    runner = web.AppRunner(app)
+    runner = AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "127.0.0.1", port)
+    site = TCPSite(runner, "127.0.0.1", port)
     await site.start()
 
     transport = create_transport(f"http://127.0.0.1:{port}", "worker-v", "token")
@@ -273,71 +273,70 @@ async def test_protocol_version_mismatch(unused_tcp_port_factory: Any, caplog: p
         await runner.cleanup()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_server_garbage_response(unused_tcp_port_factory: Any) -> None:
     port = unused_tcp_port_factory()
 
-    async def handler(request: web.Request) -> web.Response:
-        return web.Response(text="<html>Garbage</html>", status=200, content_type="text/html")
+    async def handler(request: Request) -> Response:
+        return Response(text="<html>Garbage</html>", status=200, content_type="text/html")
 
-    app = web.Application()
+    app = Application()
     app.router.add_post(ENDPOINT_WORKER_REGISTER, handler)
-    runner = web.AppRunner(app)
+    runner = AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "127.0.0.1", port)
+    site = TCPSite(runner, "127.0.0.1", port)
     await site.start()
 
     transport = create_transport(f"http://127.0.0.1:{port}", "worker-g", "token")
     await transport.connect()
     try:
-        with pytest.raises(RxonProtocolError, match="not a valid JSON"):
+        with raises(RxonProtocolError, match="not a valid JSON"):
             await transport.register(WorkerRegistration("worker-g"))
     finally:
         await transport.close()
         await runner.cleanup()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_auth_refresh_failure(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, _, listener = server
 
     async def auth_fail_permanent_handler(msg_type: str, payload: Any, context: dict[str, Any]) -> Any:
         if msg_type == "sts_token":
-            return web.Response(status=403)
+            return Response(status=403)
         if context.get("token") == "expired":
-            return web.Response(status=401)
+            return Response(status=401)
         return {"status": "ok"}
 
     listener.handler = auth_fail_permanent_handler
     transport = create_transport(base_url, "worker-fail", "expired")
     await transport.connect()
     try:
-        with pytest.raises(RxonAuthError):
+        with raises(RxonAuthError):
             await transport.send_heartbeat(Heartbeat("worker-fail", "idle"))
     finally:
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_network_timeout(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, _, listener = server
 
     async def slow_handler(msg_type: str, payload: Any, context: dict[str, Any]) -> Any:
-        await asyncio.sleep(2.0)
+        await sleep(2.0)
         return {"status": "ok"}
 
     listener.handler = slow_handler
     transport = create_transport(base_url, "worker-timeout", "token")
     await transport.connect()
     try:
-        # poll_task uses its own timeout, but we test a quick heartbeat
-        with pytest.raises(TimeoutError):
-            await asyncio.wait_for(transport.send_heartbeat(Heartbeat("worker-timeout", "idle")), timeout=0.1)
+        with raises(TimeoutError):
+            await wait_for(transport.send_heartbeat(Heartbeat("worker-timeout", "idle")), timeout=0.1)
     finally:
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_poll_returns_empty_dict(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, _, listener = server
 
@@ -356,7 +355,7 @@ async def test_poll_returns_empty_dict(server: tuple[str, dict[str, Any], HttpLi
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_websocket_error_handling(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, _, listener = server
 
@@ -377,7 +376,7 @@ async def test_websocket_error_handling(server: tuple[str, dict[str, Any], HttpL
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_websocket_auth_rejection(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, _, listener = server
 
@@ -392,54 +391,52 @@ async def test_websocket_auth_rejection(server: tuple[str, dict[str, Any], HttpL
         ws_url = f"{base_url.replace('http', 'ws', 1)}{WS_ENDPOINT}/worker-denied"
         try:
             async with session.ws_connect(ws_url) as _:
-                pytest.fail("Handshake should not have happened")
+                fail("Handshake should not have happened")
         except Exception as e:
             assert "403" in str(e)
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_server_error_500(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, _, listener = server
 
     async def server_fail_handler(msg_type: str, payload: Any, context: dict[str, Any]) -> Any:
-        return web.Response(status=500, text="Internal Server Error (Simulated)")
+        return Response(status=500, text="Internal Server Error (Simulated)")
 
     listener.handler = server_fail_handler
     transport = create_transport(base_url, "worker-error", "token")
     await transport.connect()
 
     try:
-        with pytest.raises(RxonProtocolError, match="HTTP 500"):
+        with raises(RxonProtocolError, match="HTTP 500"):
             await transport.register(WorkerRegistration("worker-error"))
     finally:
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_server_error_400_invalid_payload(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, _, listener = server
 
     async def bad_request_handler(msg_type: str, payload: Any, context: dict[str, Any]) -> Any:
-        return web.Response(status=400, text="Validation error: name is too short")
+        return Response(status=400, text="Validation error: name is too short")
 
     listener.handler = bad_request_handler
     transport = create_transport(base_url, "worker-bad", "token")
     await transport.connect()
 
     try:
-        with pytest.raises(RxonProtocolError, match="HTTP 400"):
+        with raises(RxonProtocolError, match="HTTP 400"):
             await transport.register(WorkerRegistration("worker-bad"))
     finally:
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_websocket_reconnection_logic(server: tuple[str, dict[str, Any], HttpListener], monkeypatch: Any) -> None:
-    # Simulate connection drop and recovery
     base_url, state, listener = server
     worker_id = "ws-reconnect"
 
-    # Mocking asyncio.sleep
     sleep_calls = 0
 
     async def mock_sleep(seconds: float) -> None:
@@ -454,7 +451,7 @@ async def test_websocket_reconnection_logic(server: tuple[str, dict[str, Any], H
         nonlocal attempts
         if msg_type == "websocket_auth":
             attempts += 1
-            if attempts <= 2:  # Fail first two attempts
+            if attempts <= 2:
                 raise PermissionError("Temporary Failure")
             return {"status": "ok"}
         if msg_type == "websocket":
@@ -470,13 +467,13 @@ async def test_websocket_reconnection_logic(server: tuple[str, dict[str, Any], H
         commands = transport.listen_for_commands()
         cmd = await anext(commands)
         assert cmd.command == "reconnected"
-        assert attempts == 3  # Success on third attempt
-        assert sleep_calls == 2  # Two retries before success
+        assert attempts == 3
+        assert sleep_calls == 2
     finally:
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_send_result_mismatch_ignored(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, _, listener = server
 
@@ -496,7 +493,7 @@ async def test_send_result_mismatch_ignored(server: tuple[str, dict[str, Any], H
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_rate_limit_error(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, _, listener = server
 
@@ -508,7 +505,7 @@ async def test_rate_limit_error(server: tuple[str, dict[str, Any], HttpListener]
     await transport.connect()
 
     try:
-        with pytest.raises(RxonRateLimitError) as exc_info:
+        with raises(RxonRateLimitError) as exc_info:
             await transport.send_heartbeat(Heartbeat("worker-ratelimit", "idle"))
 
         assert exc_info.value.details["status"] == 429
@@ -519,7 +516,7 @@ async def test_rate_limit_error(server: tuple[str, dict[str, Any], HttpListener]
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_sts_refresh_token_flow(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, state, listener = server
     worker_id = "worker-refresh-test"
@@ -560,14 +557,13 @@ async def test_sts_refresh_token_flow(server: tuple[str, dict[str, Any], HttpLis
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_poll_task_hot_skills_server_side(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, state, listener = server
     worker_id = "worker-hot-skills"
 
     async def poll_handler(msg_type: str, payload: Any, context: dict[str, Any]) -> Any:
         if msg_type == "poll":
-            # Verify server extracted hot_skills from context (which came from query params)
             assert "hot_skills" in context
             assert context["hot_skills"] == ["fast-skill"]
             return {"job_id": "j-1", "task_id": "t-1", "type": "fast-skill"}
@@ -585,7 +581,7 @@ async def test_poll_task_hot_skills_server_side(server: tuple[str, dict[str, Any
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_rate_limit_during_poll(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, _, listener = server
 
@@ -599,14 +595,14 @@ async def test_rate_limit_during_poll(server: tuple[str, dict[str, Any], HttpLis
     await transport.connect()
 
     try:
-        with pytest.raises(RxonRateLimitError) as exc_info:
+        with raises(RxonRateLimitError) as exc_info:
             await transport.poll_task(timeout=1.0)
         assert "Polling too fast" in str(exc_info.value)
     finally:
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_rate_limit_during_send_result(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, _, listener = server
     call_count = 0
@@ -624,21 +620,19 @@ async def test_rate_limit_during_send_result(server: tuple[str, dict[str, Any], 
 
     try:
         res = TaskResult("job-1", "task-1", "worker-res-limit", "success")
-        # Ensure it raises immediately and doesn't retry like network errors
-        with pytest.raises(RxonRateLimitError):
+        with raises(RxonRateLimitError):
             await transport.send_result(res)
 
-        assert call_count == 1  # No retries for 429
+        assert call_count == 1
     finally:
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_rate_limit_custom_code(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, _, listener = server
 
     async def custom_code_handler(msg_type: str, payload: Any, context: dict[str, Any]) -> Any:
-        # Simulate custom limit code (e.g. per-skill limit)
         raise RxonRateLimitError("Skill limit exceeded", details={"code": "SKILL_QUOTA_EXCEEDED"})
 
     listener.handler = custom_code_handler
@@ -646,7 +640,7 @@ async def test_rate_limit_custom_code(server: tuple[str, dict[str, Any], HttpLis
     await transport.connect()
 
     try:
-        with pytest.raises(RxonRateLimitError) as exc_info:
+        with raises(RxonRateLimitError) as exc_info:
             await transport.send_heartbeat(Heartbeat("worker-custom-limit", "idle"))
 
         assert exc_info.value.details["code"] == "SKILL_QUOTA_EXCEEDED"
@@ -654,19 +648,19 @@ async def test_rate_limit_custom_code(server: tuple[str, dict[str, Any], HttpLis
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_rate_limit_retry_after_seconds(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, _, listener = server
 
     async def retry_after_handler(msg_type: str, payload: Any, context: dict[str, Any]) -> Any:
-        return web.json_response({"error": "Too busy", "code": "BUSY"}, status=429, headers={"Retry-After": "120"})
+        return json_response({"error": "Too busy", "code": "BUSY"}, status=429, headers={"Retry-After": "120"})
 
     listener.handler = retry_after_handler
     transport = create_transport(base_url, "retry-sec", "token")
     await transport.connect()
 
     try:
-        with pytest.raises(RxonRateLimitError) as exc_info:
+        with raises(RxonRateLimitError) as exc_info:
             await transport.send_heartbeat(Heartbeat("retry-sec", "idle"))
 
         assert exc_info.value.details["retry_after"] == 120.0
@@ -674,29 +668,29 @@ async def test_rate_limit_retry_after_seconds(server: tuple[str, dict[str, Any],
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_rate_limit_retry_after_date(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     base_url, _, listener = server
 
-    future_date = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)
+    future_date = datetime.now(UTC) + timedelta(hours=1)
     date_str = future_date.strftime("%a, %d %b %Y %H:%M:%S GMT")
 
     async def retry_date_handler(msg_type: str, payload: Any, context: dict[str, Any]) -> Any:
-        return web.json_response({"error": "Maintenance"}, status=429, headers={"Retry-After": date_str})
+        return json_response({"error": "Maintenance"}, status=429, headers={"Retry-After": date_str})
 
     listener.handler = retry_date_handler
     transport = create_transport(base_url, "retry-date", "token")
     await transport.connect()
 
     try:
-        with pytest.raises(RxonRateLimitError):
+        with raises(RxonRateLimitError):
             await transport.send_heartbeat(Heartbeat("retry-date", "idle"))
 
     finally:
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_poll_task_hot_skills_edge_cases(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     """Tests empty, None, and malformed hot_skills strings."""
     base_url, state, listener = server
@@ -725,14 +719,14 @@ async def test_poll_task_hot_skills_edge_cases(server: tuple[str, dict[str, Any]
         await transport.close()
 
 
-@pytest.mark.asyncio
+@mark.asyncio
 async def test_sts_refresh_auth_error(server: tuple[str, dict[str, Any], HttpListener]) -> None:
     """Tests behavior when the refresh call itself returns 401/403."""
     base_url, _, listener = server
 
     async def refresh_fail_handler(msg_type: str, payload: Any, context: dict[str, Any]) -> Any:
         if msg_type == "sts_refresh":
-            return web.Response(status=401, text="Refresh token expired")
+            return Response(status=401, text="Refresh token expired")
         return {"status": "ok"}
 
     listener.handler = refresh_fail_handler
@@ -743,7 +737,6 @@ async def test_sts_refresh_auth_error(server: tuple[str, dict[str, Any], HttpLis
     try:
         res = await transport.refresh_token()
         assert res is None
-        # Ensure we didn't crash and kept the old token (or it will fail on next request)
         assert transport.token == "access"
     finally:
         await transport.close()

@@ -8,8 +8,8 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
-import msgspec
-import pytest
+from msgspec import Struct
+from pytest import raises
 
 from rxon.utils import from_dict, json_dumps, to_dict
 
@@ -17,7 +17,7 @@ from rxon.utils import from_dict, json_dumps, to_dict
 def test_to_dict_recursion_limit() -> None:
     a: dict[str, Any] = {}
     a["loop"] = a
-    with pytest.raises(RecursionError, match="Maximum recursion depth"):
+    with raises(RecursionError, match="Maximum recursion depth"):
         to_dict(a)
 
     root: dict[str, Any] = {"v": 0}
@@ -30,7 +30,7 @@ def test_to_dict_recursion_limit() -> None:
     assert result["n"]["v"] == 1
 
     curr["extra"] = {"final": True}
-    with pytest.raises(RecursionError, match="Maximum recursion depth"):
+    with raises(RecursionError, match="Maximum recursion depth"):
         to_dict(root)
 
     complex_deep = {"a": [{"b": [{"c": "end"}]}]}
@@ -54,13 +54,13 @@ class Status(Enum):
     INACTIVE = "inactive"
 
 
-class Point(msgspec.Struct):
+class Point(Struct):
     x: int
     y: int
     label: str | None = None
 
 
-class Config(msgspec.Struct):
+class Config(Struct):
     name: str
     points: list[Point]
     status: Status = Status.ACTIVE
@@ -102,7 +102,7 @@ def test_from_dict_full() -> None:
 
 def test_from_dict_negative() -> None:
     data = {"x": 1}
-    with pytest.raises(ValueError, match="Failed to instantiate Point"):
+    with raises(ValueError, match="Failed to instantiate Point"):
         from_dict(Point, data)
 
     assert from_dict(Point, "not-a-dict") == "not-a-dict"
@@ -125,7 +125,7 @@ def test_from_dict_extra_fields() -> None:
 
 
 def test_from_dict_deep_nesting_and_mixed() -> None:
-    class Deep(msgspec.Struct):
+    class Deep(Struct):
         name: str
         config: Config
         meta: dict[str, Any]
@@ -143,16 +143,16 @@ def test_from_dict_deep_nesting_and_mixed() -> None:
 
 def test_from_dict_extreme_chaos() -> None:
     data = {"points": "this-should-be-a-list-of-dicts"}
-    with pytest.raises(ValueError, match="Failed to instantiate Config"):
+    with raises(ValueError, match="Failed to instantiate Config"):
         from_dict(Config, data)
 
     data2 = {"name": "test", "points": [123]}
-    with pytest.raises(ValueError, match="Failed to instantiate Config"):
+    with raises(ValueError, match="Failed to instantiate Config"):
         from_dict(Config, data2)
 
 
 def test_from_dict_optional_list() -> None:
-    class Root(msgspec.Struct):
+    class Root(Struct):
         items: list[Point] | None = None
 
     r1 = from_dict(Root, {"items": None})
@@ -165,7 +165,7 @@ def test_from_dict_optional_list() -> None:
 
 
 def test_from_dict_empty_collections() -> None:
-    class Multi(msgspec.Struct):
+    class Multi(Struct):
         tags: list[str] | None = None
         info: dict[str, int] | None = None
 
@@ -179,7 +179,7 @@ def test_from_dict_empty_collections() -> None:
 
 
 def test_from_dict_uuid() -> None:
-    class Node(msgspec.Struct):
+    class Node(Struct):
         id: UUID
         tags: list[UUID] | None = None
 
@@ -197,10 +197,10 @@ def test_from_dict_uuid() -> None:
 
 
 def test_from_dict_union_models_logic() -> None:
-    class ModelA(msgspec.Struct):
+    class ModelA(Struct):
         a: int
 
-    class Root(msgspec.Struct):
+    class Root(Struct):
         union: ModelA | str
 
     data_b = {"union": "hello"}
@@ -215,7 +215,7 @@ def test_from_dict_union_models_logic() -> None:
 
 
 def test_from_dict_uuid_keys() -> None:
-    class Registry(msgspec.Struct):
+    class Registry(Struct):
         mapping: dict[UUID, str]
 
     uid = uuid4()
@@ -264,7 +264,7 @@ def test_to_dict_float_normalization_edge_cases() -> None:
 
 
 def test_from_dict_datetime() -> None:
-    class Log(msgspec.Struct):
+    class Log(Struct):
         ts: datetime
 
     dt = datetime(2026, 5, 17, 12, 0, 0)
@@ -276,16 +276,16 @@ def test_from_dict_datetime() -> None:
 
 
 def test_from_dict_datetime_negative() -> None:
-    class Log(msgspec.Struct):
+    class Log(Struct):
         ts: datetime
 
     data = {"ts": "not-a-date"}
-    with pytest.raises(ValueError, match="Failed to instantiate Log"):
+    with raises(ValueError, match="Failed to instantiate Log"):
         from_dict(Log, data)
 
 
 def test_to_dict_deep_mixed_structures() -> None:
-    class Node(msgspec.Struct):
+    class Node(Struct):
         val: int
         next: Any = None
 
@@ -296,7 +296,6 @@ def test_to_dict_deep_mixed_structures() -> None:
 
 
 def test_from_dict_container_list() -> None:
-    # Verify that from_dict successfully converts a list of dictionaries to a list of msgspec.Struct
     data = [{"x": 1, "y": 2}, {"x": 3, "y": 4, "label": "test"}]
     res = from_dict(list[Point], data)
     assert isinstance(res, list)

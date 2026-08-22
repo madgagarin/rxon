@@ -5,11 +5,10 @@
 
 from abc import ABC, abstractmethod
 from hashlib import sha256
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from urllib.parse import urlparse
 
-if TYPE_CHECKING:
-    from rxon.models import FileMetadata
+from rxon.models import FileMetadata
 
 __all__ = [
     "RXON_BLOB_SCHEME",

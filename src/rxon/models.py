@@ -3,12 +3,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from logging import getLogger
 from typing import Any
 
-import fastjsonschema
-import msgspec
+from fastjsonschema import compile as compile_schema
+from msgspec import Struct
 
 from rxon.schema import translate_error, validate_data
+
+logger = getLogger(__name__)
 
 __all__ = [
     "HardwareDevice",
@@ -31,7 +34,7 @@ __all__ = [
 ]
 
 
-class HardwareDevice(msgspec.Struct, omit_defaults=True, frozen=True):
+class HardwareDevice(Struct, omit_defaults=True, frozen=True):
     type: str
     model: str | None = None
     id: str | None = None
@@ -78,19 +81,19 @@ class HardwareDevice(msgspec.Struct, omit_defaults=True, frozen=True):
         return True
 
 
-class DeviceUsage(msgspec.Struct, omit_defaults=True, frozen=True):
+class DeviceUsage(Struct, omit_defaults=True, frozen=True):
     unit_id: str
     load_percent: float
     metrics: dict[str, Any] | None = None
 
 
-class ResourcesUsage(msgspec.Struct, omit_defaults=True, frozen=True):
+class ResourcesUsage(Struct, omit_defaults=True, frozen=True):
     cpu_load_percent: float = 0.0
     ram_used_gb: float = 0.0
     devices_usage: list[DeviceUsage] | None = None
 
 
-class Resources(msgspec.Struct, omit_defaults=True, frozen=True):
+class Resources(Struct, omit_defaults=True, frozen=True):
     devices: list[HardwareDevice] | None = None
     properties: dict[str, Any] | None = None
 
@@ -134,7 +137,7 @@ class Resources(msgspec.Struct, omit_defaults=True, frozen=True):
         return True
 
 
-class InstalledArtifact(msgspec.Struct, omit_defaults=True, frozen=True):
+class InstalledArtifact(Struct, omit_defaults=True, frozen=True):
     name: str
     version: str = "unknown"
     type: str | None = None
@@ -175,7 +178,7 @@ class InstalledArtifact(msgspec.Struct, omit_defaults=True, frozen=True):
         return True
 
 
-class SkillInfo(msgspec.Struct, omit_defaults=True, frozen=True):
+class SkillInfo(Struct, omit_defaults=True, frozen=True):
     name: str
     type: str | None = None
     description: str | None = None
@@ -194,10 +197,14 @@ class SkillInfo(msgspec.Struct, omit_defaults=True, frozen=True):
         val = getattr(self, "_input_validator", None)
         if val is None and self.input_schema:
             try:
-                val = fastjsonschema.compile(self.input_schema)
+                val = compile_schema(self.input_schema)
                 object.__setattr__(self, "_input_validator", val)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    "Failed to compile input schema for skill '%s': %s",
+                    getattr(self, "name", "unknown"),
+                    e,
+                )
         return val
 
     @property
@@ -205,10 +212,14 @@ class SkillInfo(msgspec.Struct, omit_defaults=True, frozen=True):
         val = getattr(self, "_output_validator", None)
         if val is None and self.output_schema:
             try:
-                val = fastjsonschema.compile(self.output_schema)
+                val = compile_schema(self.output_schema)
                 object.__setattr__(self, "_output_validator", val)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    "Failed to compile output schema for skill '%s': %s",
+                    getattr(self, "name", "unknown"),
+                    e,
+                )
         return val
 
     def matches(self, req: "SkillInfo") -> bool:
@@ -225,7 +236,7 @@ class SkillInfo(msgspec.Struct, omit_defaults=True, frozen=True):
         return self.name < other.name
 
 
-class SecurityContext(msgspec.Struct, omit_defaults=True, frozen=True):
+class SecurityContext(Struct, omit_defaults=True, frozen=True):
     """Security metadata for Zero Trust identity and verification."""
 
     signature: str | None = None
@@ -234,7 +245,7 @@ class SecurityContext(msgspec.Struct, omit_defaults=True, frozen=True):
     metadata: dict[str, Any] | None = None
 
 
-class WorkerCapabilities(msgspec.Struct, omit_defaults=True, frozen=True):
+class WorkerCapabilities(Struct, omit_defaults=True, frozen=True):
     hostname: str = "unknown"
     ip_address: str = "0.0.0.0"
     cost_per_skill: dict[str, float] | None = None
@@ -242,14 +253,14 @@ class WorkerCapabilities(msgspec.Struct, omit_defaults=True, frozen=True):
     extra: dict[str, Any] | None = None
 
 
-class FileMetadata(msgspec.Struct, omit_defaults=True, frozen=True):
+class FileMetadata(Struct, omit_defaults=True, frozen=True):
     uri: str
     size: int = 0
     etag: str | None = None
     metadata: dict[str, Any] | None = None
 
 
-class WorkerRegistration(msgspec.Struct, omit_defaults=True, frozen=True):
+class WorkerRegistration(Struct, omit_defaults=True, frozen=True):
     worker_id: str
     worker_type: str = "generic"
     supported_skills: list[SkillInfo] | None = None
@@ -265,7 +276,7 @@ class WorkerRegistration(msgspec.Struct, omit_defaults=True, frozen=True):
     timestamp: int | None = None
 
 
-class TokenResponse(msgspec.Struct, omit_defaults=True, frozen=True):
+class TokenResponse(Struct, omit_defaults=True, frozen=True):
     access_token: str
     expires_in: int
     worker_id: str
@@ -273,7 +284,7 @@ class TokenResponse(msgspec.Struct, omit_defaults=True, frozen=True):
     metadata: dict[str, Any] | None = None
 
 
-class WorkerEventPayload(msgspec.Struct, omit_defaults=True, frozen=True):
+class WorkerEventPayload(Struct, omit_defaults=True, frozen=True):
     event_id: str
     worker_id: str
     origin_worker_id: str
@@ -290,7 +301,7 @@ class WorkerEventPayload(msgspec.Struct, omit_defaults=True, frozen=True):
     metadata: dict[str, Any] | None = None
 
 
-class WorkerCommand(msgspec.Struct, omit_defaults=True, frozen=True):
+class WorkerCommand(Struct, omit_defaults=True, frozen=True):
     command: str
     task_id: str | None = None
     job_id: str | None = None
@@ -298,7 +309,7 @@ class WorkerCommand(msgspec.Struct, omit_defaults=True, frozen=True):
     metadata: dict[str, Any] | None = None
 
 
-class TaskPayload(msgspec.Struct, omit_defaults=True, frozen=True):
+class TaskPayload(Struct, omit_defaults=True, frozen=True):
     job_id: str
     task_id: str
     type: str
@@ -333,13 +344,13 @@ class TaskPayload(msgspec.Struct, omit_defaults=True, frozen=True):
         return validate_data(self.params, skill.input_schema)
 
 
-class TaskError(msgspec.Struct, omit_defaults=True, frozen=True):
+class TaskError(Struct, omit_defaults=True, frozen=True):
     code: str
     message: str
     details: dict[str, Any] | None = None
 
 
-class TaskResult(msgspec.Struct, omit_defaults=True, frozen=True):
+class TaskResult(Struct, omit_defaults=True, frozen=True):
     job_id: str
     task_id: str
     worker_id: str | None = None
@@ -354,7 +365,7 @@ class TaskResult(msgspec.Struct, omit_defaults=True, frozen=True):
     costs: dict[str, Any] | None = None
 
 
-class Heartbeat(msgspec.Struct, omit_defaults=True, frozen=True):
+class Heartbeat(Struct, omit_defaults=True, frozen=True):
     worker_id: str
     status: str
     usage: ResourcesUsage | None = None

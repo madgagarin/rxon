@@ -28,3 +28,4 @@ venv/
 
 # Project specific
 .python-version
+.agignore
